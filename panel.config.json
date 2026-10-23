@@ -1,5 +1,5 @@
 {
-    "version": 1,
+    "version": 3,
     "output": {
         "wledIp": "192.168.1.69",
         "brightness": 80
@@ -17,7 +17,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -32,7 +33,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -46,7 +48,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -60,7 +63,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -74,7 +78,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -106,7 +111,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -120,7 +126,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -134,7 +141,8 @@
                     255,
                     255
                 ],
-                "speed": 70
+                "speed": 70,
+                "text": "{{value}}"
             }
         },
         {
@@ -149,7 +157,7 @@
                     255
                 ],
                 "speed": 70,
-                "prefix": "PV "
+                "text": "PV {{value}}"
             }
         }
     ],
@@ -179,8 +187,40 @@
                 }
             ],
             "action": {
-                "do": "show",
-                "entityId": "media_player.living_room"
+                "do": "loop",
+                "members": [
+                    {
+                        "id": "member-b73giz",
+                        "entityId": "media_player.living_room",
+                        "display": {
+                            "style": "text",
+                            "segmentId": 0,
+                            "color": [
+                                255,
+                                255,
+                                255
+                            ],
+                            "speed": 70,
+                            "text": "{{title}}"
+                        }
+                    },
+                    {
+                        "id": "member-pb1tmh",
+                        "entityId": "media_player.living_room",
+                        "display": {
+                            "style": "text",
+                            "segmentId": 0,
+                            "color": [
+                                255,
+                                255,
+                                255
+                            ],
+                            "speed": 70,
+                            "text": "{{artist}}"
+                        }
+                    }
+                ],
+                "dwellSeconds": 5
             }
         },
         {
@@ -190,13 +230,31 @@
             "conditions": [],
             "action": {
                 "do": "loop",
-                "entityIds": [
-                    "builtin.time",
-                    "weather.forecast_home",
-                    "sensor.kitchen_temperature",
-                    "sensor.battery_level",
-                    "builtin.date",
-                    "sensor.total_dc_power"
+                "members": [
+                    {
+                        "id": "builtin.time",
+                        "entityId": "builtin.time"
+                    },
+                    {
+                        "id": "weather.forecast_home",
+                        "entityId": "weather.forecast_home"
+                    },
+                    {
+                        "id": "sensor.kitchen_temperature",
+                        "entityId": "sensor.kitchen_temperature"
+                    },
+                    {
+                        "id": "sensor.battery_level",
+                        "entityId": "sensor.battery_level"
+                    },
+                    {
+                        "id": "builtin.date",
+                        "entityId": "builtin.date"
+                    },
+                    {
+                        "id": "sensor.total_dc_power",
+                        "entityId": "sensor.total_dc_power"
+                    }
                 ],
                 "dwellSeconds": 5
             }

@@ -1,0 +1,33 @@
+[Unit]
+Description=wled-ha-bridge: Home Assistant state to a WLED panel
+Wants=network-online.target
+After=network-online.target
+# A bad .env or panel.config.json exits 1 at startup; stop retrying after five
+# of those rather than looping forever. Lost connections never exit the process.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=wled-bridge
+Group=wled-bridge
+# The --allow-read/--allow-write grants in deno.json are relative paths,
+# resolved against this directory.
+WorkingDirectory=/opt/wled-ha-bridge
+ExecStart=/usr/local/bin/deno task start
+Restart=on-failure
+RestartSec=5
+
+# The service user has no home directory, so Deno needs a cache directory given.
+CacheDirectory=wled-ha-bridge
+Environment=DENO_DIR=/var/cache/wled-ha-bridge
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/opt/wled-ha-bridge
+
+[Install]
+WantedBy=multi-user.target

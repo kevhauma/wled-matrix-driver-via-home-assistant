@@ -329,6 +329,9 @@ reports reachability, the token over REST, the WebSocket upgrade, auth and the
 subscription as separate steps, so a failure names itself instead of showing up
 as a reconnect loop. It prints no token and no entity values.
 
+To run it unattended on a Linux box, as a systemd service that survives
+reboots, see [`deploy/README.md`](deploy/README.md).
+
 The entity ids seeded into `panel.config.json` are **mocks**. Only
 `media_player.living_room_2_0` and `sensor.kitchen_temperature` are known real
 (from `wled-now-playing`); the Entities tab lists the rest.
