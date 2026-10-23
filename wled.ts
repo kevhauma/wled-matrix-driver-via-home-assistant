@@ -252,12 +252,18 @@ const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues
 export type PayloadInput = {
     decision: Decision,
     entities: readonly PanelEntity[],
+    /**
+     * The displays the flow sets for itself, from `displaysInFlow`. Only
+     * their segment ids are read: those are segments to switch off when
+     * something else is drawn.
+     */
+    flowDisplays: readonly WledDisplay[],
     readings: ReadonlyMap<string, Reading>,
     brightness: number,
 };
 
 export const toWledPayload = (
-    { decision, entities, readings, brightness }: PayloadInput,
+    { decision, entities, flowDisplays, readings, brightness }: PayloadInput,
 ): WledPayload => {
     if (decision.show === 'nothing') {
         return { on: false };
@@ -269,7 +275,7 @@ export const toWledPayload = (
     }
 
     const reading = readings.get(entity.entityId) ?? UNAVAILABLE;
-    const display = entity.display;
+    const display = decision.display ?? entity.display;
     const otherValues = toEntityValues(readings);
 
     /**
@@ -281,8 +287,9 @@ export const toWledPayload = (
      * which segments the *other* entities draw on, so these are appended to
      * whatever it asked for.
      */
-    const usedSegmentIds = new Set(entities.flatMap(candidate => {
-        const ids = segmentIdsOf(candidate.display);
+    const allDisplays = [...entities.map(candidate => candidate.display), ...flowDisplays];
+    const usedSegmentIds = new Set(allDisplays.flatMap(candidate => {
+        const ids = segmentIdsOf(candidate);
         return ids;
     }));
     const ownSegmentIds = segmentIdsOf(display);

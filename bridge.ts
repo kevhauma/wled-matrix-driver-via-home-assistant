@@ -1,6 +1,6 @@
 import { defaultFormatFor, isBuiltinId } from './builtins.ts';
 import { Config } from './config.ts';
-import { LoopState } from './flow.ts';
+import { displaysInFlow, LoopState } from './flow.ts';
 import { EntityLookup } from './homeAssistant/entityStore.ts';
 import { ConnectionState, ConnectionStates, createHomeAssistantSocket } from './homeAssistant/socket.ts';
 import { PanelConfig } from './panelConfig.ts';
@@ -43,8 +43,16 @@ export type Bridge = {
     reload: (panel: PanelConfig) => void,
 };
 
-const describe = (decision: Decision): string =>
-    decision.show === 'nothing' ? `off — ${decision.reason}` : decision.entityId;
+/**
+ * A display set in the flow is named, so that the same entity shown two ways
+ * in one rotation logs as two different things rather than as a repeat.
+ */
+const describe = (decision: Decision): string => {
+    if (decision.show === 'nothing') {
+        return `off — ${decision.reason}`;
+    }
+    return decision.display === undefined ? decision.entityId : `${decision.entityId} (own view)`;
+};
 
 /**
  * The Home Assistant ids only. Built-in items come from the clock here, so
@@ -174,6 +182,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
         const payload = toWledPayload({
             decision,
             entities: panel.entities,
+            flowDisplays: displaysInFlow(panel.flow),
             readings,
             brightness: panel.output.brightness,
         });

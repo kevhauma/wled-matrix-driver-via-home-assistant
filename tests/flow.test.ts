@@ -118,7 +118,7 @@ const loopFlow = (dwellSeconds: number): FlowRule[] => [
         action: { do: 'show', entityId: SPEAKER },
     }),
     rule('sensors', {
-        action: { do: 'loop', entityIds: [TEMP, BATTERY], dwellSeconds },
+        action: { do: 'loop', members: [{ id: 'temp', entityId: TEMP }, { id: 'battery', entityId: BATTERY }], dwellSeconds },
     }),
 ];
 
@@ -152,7 +152,7 @@ Deno.test('a loop resumes on the member it was on, with a full fresh dwell', () 
 
 Deno.test('a loop whose members have all dropped off falls through', () => {
     const flow = [
-        rule('sensors', { action: { do: 'loop', entityIds: [TEMP, BATTERY], dwellSeconds: 5 } }),
+        rule('sensors', { action: { do: 'loop', members: [{ id: 'temp', entityId: TEMP }, { id: 'battery', entityId: BATTERY }], dwellSeconds: 5 } }),
         rule('idle', { label: 'no sensor has a reading', action: { do: 'blank' } }),
     ];
 
@@ -210,4 +210,38 @@ Deno.test('a time window that ends before it starts runs past midnight', () => {
     const shown = shownAt(flow, [at(21, 59), at(22, 0), at(3, 0), at(6, 59), at(7, 0), at(12, 0)]);
 
     assertSame(shown, 'entity nothing nothing nothing entity entity', 'the night, across the date');
+});
+
+const titleView = { style: 'text' as const, segmentId: 0, color: [255, 255, 255] as [number, number, number], speed: 80, text: '{{title}}' };
+const artistView = { ...titleView, text: '{{artist}}' };
+
+Deno.test('one entity can be a loop member twice, each with its own display', () => {
+    const flow = [
+        rule('song', {
+            action: {
+                do: 'loop',
+                members: [
+                    { id: 'title', entityId: SPEAKER, display: titleView },
+                    { id: 'artist', entityId: SPEAKER, display: artistView },
+                ],
+                dwellSeconds: 5,
+            },
+        }),
+    ];
+    const readings = { [SPEAKER]: PLAYING };
+
+    const decisions = play(flow, [0, 5_000, 10_000].map(time => ({ at: time, readings })));
+    const texts = decisions.map(decision => decision.show === 'entity' && decision.display?.style === 'text'
+        ? decision.display.text
+        : 'none');
+
+    assertSame(texts.join(' '), '{{title}} {{artist}} {{title}}', 'the same entity, alternating displays');
+});
+
+Deno.test('a show rule passes its own display on, and none when it has none', () => {
+    const overridden = once([rule('a', { action: { do: 'show', entityId: TEMP, display: titleView } })], { [TEMP]: WARM });
+    const plain = once([rule('b', { action: { do: 'show', entityId: TEMP } })], { [TEMP]: WARM });
+
+    assertSame(overridden.show === 'entity' && overridden.display === titleView, true, 'the override');
+    assertSame(plain.show === 'entity' && 'display' in plain, false, 'no display key at all');
 });

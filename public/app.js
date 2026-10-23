@@ -38,6 +38,12 @@ const state = {
      */
     builtins: [],
     selectedEntityId: null,
+    /**
+     * Set when the Display tab is editing a display the flow sets for itself
+     * rather than the entity's own: `{ ruleId, memberId }`, with `memberId`
+     * only for a loop member. Choosing an entity clears it.
+     */
+    selectedFlowTarget: null,
     live: null,
 };
 
@@ -75,12 +81,20 @@ const context = () => ({
     builtins: state.builtins,
     isBuiltin: entityId => state.builtins.some(item => item.entityId === entityId),
     selectedEntityId: state.selectedEntityId,
+    selectedFlowTarget: state.selectedFlowTarget,
     changed,
     edited,
     setStatus,
     selectEntity: entityId => {
         state.selectedEntityId = entityId;
+        state.selectedFlowTarget = null;
         render();
+    },
+    editFlowDisplay: (target, entityId) => {
+        state.selectedEntityId = entityId;
+        state.selectedFlowTarget = target;
+        applyDirty();
+        setTab('display');
     },
     showTab: name => {
         setTab(name);
@@ -118,7 +132,8 @@ const describeDecision = live => {
     if (live.decision.show === 'nothing') {
         return `off — ${live.decision.reason}`;
     }
-    return live.decision.entityId;
+    const ownView = live.decision.display === undefined ? '' : ' (own view)';
+    return `${live.decision.entityId}${ownView}`;
 };
 
 const CONNECTION_CLASSES = {

@@ -1,4 +1,5 @@
-import { Condition, FlowRule, LoopState, TimeCondition } from './flow.ts';
+import { WledDisplay } from './entities.ts';
+import { Condition, FlowRule, LoopMember, LoopState, TimeCondition } from './flow.ts';
 import { Reading } from './readings.ts';
 
 /**
@@ -19,7 +20,15 @@ import { Reading } from './readings.ts';
 
 export type Decision =
     | { show: 'nothing', reason: string }
-    | { show: 'entity', entityId: string };
+    | {
+        show: 'entity',
+        entityId: string,
+        /** Set when the flow overrides the entity's own display here. */
+        display?: WledDisplay,
+    };
+
+const toShown = ({ entityId, display }: { entityId: string, display?: WledDisplay }): Decision =>
+    display === undefined ? { show: 'entity', entityId } : { show: 'entity', entityId, display };
 
 export type PanelInput = {
     flow: readonly FlowRule[],
@@ -143,11 +152,11 @@ const matchesRule = (
 
 /** The members of a loop that actually have something to show. */
 const availableMembers = (
-    entityIds: readonly string[],
+    members: readonly LoopMember[],
     readings: ReadonlyMap<string, Reading>,
-): string[] =>
-    entityIds.filter(entityId => {
-        const reading = readings.get(entityId);
+): LoopMember[] =>
+    members.filter(member => {
+        const reading = readings.get(member.entityId);
         return hasReading(reading);
     });
 
@@ -161,32 +170,32 @@ const availableMembers = (
  */
 const advanceLoop = (
     previous: LoopState | undefined,
-    members: readonly string[],
+    memberIds: readonly string[],
     dwellSeconds: number,
     atMilliseconds: number,
 ): LoopState => {
     if (previous === undefined) {
-        return { entityId: members[0], sinceMilliseconds: atMilliseconds, wasActive: true };
+        return { memberId: memberIds[0], sinceMilliseconds: atMilliseconds, wasActive: true };
     }
 
     // Keyed by id, so a member that has gone away hands the turn to the first
     // one rather than to whoever inherited its position.
-    const isStillAMember = members.includes(previous.entityId);
-    const current = isStillAMember ? previous.entityId : members[0];
+    const isStillAMember = memberIds.includes(previous.memberId);
+    const current = isStillAMember ? previous.memberId : memberIds[0];
 
     if (!previous.wasActive) {
-        return { entityId: current, sinceMilliseconds: atMilliseconds, wasActive: true };
+        return { memberId: current, sinceMilliseconds: atMilliseconds, wasActive: true };
     }
 
     const elapsed = atMilliseconds - previous.sinceMilliseconds;
     const isDue = elapsed >= dwellSeconds * 1000;
     if (!isDue) {
-        return { entityId: current, sinceMilliseconds: previous.sinceMilliseconds, wasActive: true };
+        return { memberId: current, sinceMilliseconds: previous.sinceMilliseconds, wasActive: true };
     }
 
-    const position = members.indexOf(current);
-    const next = members[(position + 1) % members.length];
-    return { entityId: next, sinceMilliseconds: atMilliseconds, wasActive: true };
+    const position = memberIds.indexOf(current);
+    const next = memberIds[(position + 1) % memberIds.length];
+    return { memberId: next, sinceMilliseconds: atMilliseconds, wasActive: true };
 };
 
 export const decidePanel = (
@@ -227,21 +236,23 @@ export const decidePanel = (
 
         if (rule.action.do === 'show') {
             carryForward(undefined);
-            const decision: Decision = { show: 'entity', entityId: rule.action.entityId };
+            const decision = toShown(rule.action);
             return { decision, loops: nextLoops, matchedRuleId: rule.id };
         }
 
-        const members = availableMembers(rule.action.entityIds, readings);
+        const members = availableMembers(rule.action.members, readings);
         if (members.length === 0) {
             // Nothing to take a turn, so this rule does not apply at all.
             continue;
         }
 
         const previous = loops.get(rule.id);
-        const state = advanceLoop(previous, members, rule.action.dwellSeconds, atMilliseconds);
+        const memberIds = members.map(member => member.id);
+        const state = advanceLoop(previous, memberIds, rule.action.dwellSeconds, atMilliseconds);
         carryForward(rule.id);
         nextLoops.set(rule.id, state);
-        const decision: Decision = { show: 'entity', entityId: state.entityId };
+        const member = members.find(candidate => candidate.id === state.memberId) ?? members[0];
+        const decision = toShown(member);
         return { decision, loops: nextLoops, matchedRuleId: rule.id };
     }
 

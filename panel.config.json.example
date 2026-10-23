@@ -1,5 +1,5 @@
 {
-    "version": 2,
+    "version": 3,
     "output": {
         "wledIp": "",
         "brightness": 80
@@ -138,9 +138,15 @@
             "conditions": [],
             "action": {
                 "do": "loop",
-                "entityIds": [
-                    "sensor.kitchen_temperature",
-                    "sensor.battery_level"
+                "members": [
+                    {
+                        "id": "sensor.kitchen_temperature",
+                        "entityId": "sensor.kitchen_temperature"
+                    },
+                    {
+                        "id": "sensor.battery_level",
+                        "entityId": "sensor.battery_level"
+                    }
                 ],
                 "dwellSeconds": 5
             }

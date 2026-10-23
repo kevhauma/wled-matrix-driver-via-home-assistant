@@ -17,6 +17,7 @@ const buildPayload = (decision: Decision, readings: Record<string, Reading>) =>
     toWledPayload({
         decision,
         entities: PANEL_ENTITIES,
+        flowDisplays: [],
         readings: new Map(Object.entries(readings)),
         brightness: BRIGHTNESS,
     });
@@ -88,6 +89,7 @@ Deno.test('segments other than the one being shown are switched off', () => {
     const payload = toWledPayload({
         decision: { show: 'entity', entityId: EntityIds.Battery },
         entities,
+        flowDisplays: [],
         readings: new Map([[EntityIds.Battery, { kind: 'percent', percent: 10 } as Reading]]),
         brightness: BRIGHTNESS,
     });
@@ -159,6 +161,7 @@ const buildCustomPayload = (reading: Reading, entities?: PanelEntity[]) =>
     toWledPayload({
         decision: { show: 'entity', entityId: CUSTOM_ENTITY.entityId },
         entities: entities ?? [CUSTOM_ENTITY],
+        flowDisplays: [],
         readings: new Map([[CUSTOM_ENTITY.entityId, reading]]),
         brightness: BRIGHTNESS,
     });
@@ -196,6 +199,7 @@ Deno.test('a custom body that sets bri keeps it', () => {
     const payload = toWledPayload({
         decision: { show: 'entity', entityId: entity.entityId },
         entities: [entity],
+        flowDisplays: [],
         readings: new Map([[entity.entityId, { kind: 'percent', percent: 5 } as Reading]]),
         brightness: BRIGHTNESS,
     });
@@ -317,9 +321,44 @@ Deno.test('one display can draw two entities, each read as the panel draws it', 
     const payload = toWledPayload({
         decision: { show: 'entity', entityId: 'sensor.inside' },
         entities: [inside, outside],
+        flowDisplays: [],
         readings,
         brightness: BRIGHTNESS,
     });
 
     assertSame(firstSegment(payload).n, 'in 21C out 8C', 'both, rounded, with their units');
+});
+
+Deno.test('a display set in the flow replaces the entity’s own, and its segment is switched off otherwise', () => {
+    const temperature: PanelEntity = {
+        entityId: 'sensor.temperature',
+        kind: 'temperature',
+        display: textDisplay('{{value}}'),
+    };
+    const override = { ...textDisplay('temp {{value}}'), segmentId: 2 };
+    const readings = new Map<string, Reading>([
+        ['sensor.temperature', { kind: 'temperature', degrees: 18, unit: 'C' }],
+    ]);
+
+    const overridden = toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.temperature', display: override },
+        entities: [temperature],
+        flowDisplays: [override],
+        readings,
+        brightness: BRIGHTNESS,
+    });
+    const own = toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.temperature' },
+        entities: [temperature],
+        flowDisplays: [override],
+        readings,
+        brightness: BRIGHTNESS,
+    });
+
+    const overriddenSegments = overridden.seg as Segment[];
+    const ownSegments = own.seg as Segment[];
+    assertSame(overriddenSegments[0].n, 'temp 18C', 'drawn by the override');
+    assertSame(overriddenSegments[0].id, 2, 'on its segment');
+    assertSame(overriddenSegments[1].id === 0 && overriddenSegments[1].on, false, 'the entity’s own segment off');
+    assertSame(ownSegments[1].id === 2 && ownSegments[1].on, false, 'and the override’s, when it is not drawn');
 });

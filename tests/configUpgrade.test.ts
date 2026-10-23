@@ -57,3 +57,26 @@ Deno.test('a current file is passed through and reported as not upgraded', () =>
     assertSame(again.config, current, 'the same object');
     assertSame(again.upgradedFrom, undefined, 'nothing to report');
 });
+
+Deno.test('a loop’s entity ids become members, numbered only where one repeats', () => {
+    const version2 = {
+        ...VERSION_1,
+        version: 2,
+        entities: [],
+        flow: [{
+            id: 'sensors',
+            match: 'all',
+            conditions: [],
+            action: { do: 'loop', entityIds: ['sensor.a', 'sensor.b', 'sensor.a'], dwellSeconds: 5 },
+        }],
+    };
+
+    const { config, upgradedFrom } = upgradePanelConfig(version2);
+    const flow = (config as { flow: { action: Record<string, unknown> }[] }).flow;
+    const members = flow[0].action.members as { id: string, entityId: string }[];
+
+    assertSame(upgradedFrom, 2, 'from version 2');
+    assertSame(members.map(member => member.id).join(' '), 'sensor.a sensor.b sensor.a-2', 'unique ids');
+    assertSame(members[2].entityId, 'sensor.a', 'the entity kept');
+    assertSame('entityIds' in flow[0].action, false, 'and the old field gone');
+});

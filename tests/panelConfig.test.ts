@@ -13,7 +13,7 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 const withCustomPayload = (payload: unknown): unknown => ({
-    version: 2,
+    version: 3,
     output: { wledIp: '', brightness: 80 },
     entities: [{ entityId: 'sensor.a', kind: 'percent', display: { style: 'custom', payload } }],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
@@ -111,7 +111,7 @@ Deno.test('a custom display does not need a segmentId or a colour', () => {
 const TEXT_DISPLAY = { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: '{{value}}' };
 
 const withEntity = (entity: unknown): unknown => ({
-    version: 2,
+    version: 3,
     output: { wledIp: '', brightness: 80 },
     entities: [entity],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
@@ -205,7 +205,7 @@ Deno.test('a custom body is allowed on a built-in, which is the way to compose o
 });
 
 const withCondition = (condition: unknown): unknown => ({
-    version: 2,
+    version: 3,
     output: { wledIp: '', brightness: 80 },
     entities: [],
     flow: [{ id: 'night', match: 'all', conditions: [condition], action: { do: 'blank' } }],
@@ -253,7 +253,7 @@ Deno.test('a text template refuses an unknown placeholder and an empty string', 
 
 Deno.test('a reference to another entity must name one of the panel’s, with a real name', () => {
     const config = (text: string): unknown => ({
-        version: 2,
+        version: 3,
         output: { wledIp: '', brightness: 80 },
         entities: [
             { entityId: 'sensor.inside', kind: 'temperature', display: { ...TEXT_DISPLAY, text } },
@@ -278,4 +278,53 @@ Deno.test('a reference to another entity must name one of the panel’s, with a 
     assertSame(missing.includes('sensor.outdoor, which is not one of'), true, `unregistered: ${missing}`);
     assertSame(missing.includes('entities[0].display.text'), true, `and says where: ${missing}`);
     assertSame(typo.includes("'{{sensor.outside:degree}}'"), true, `an unknown name after the colon: ${typo}`);
+});
+
+const withFlowAction = (action: unknown): unknown => ({
+    version: 3,
+    output: { wledIp: '', brightness: 80 },
+    entities: [
+        { entityId: 'builtin.time', kind: 'text', format: 'hour24', display: TEXT_DISPLAY },
+        { entityId: 'sensor.a', kind: 'percent', display: TEXT_DISPLAY },
+    ],
+    flow: [{ id: 'rule', match: 'all', conditions: [], action }],
+});
+
+const actionRefusal = (action: unknown): string => {
+    try {
+        parsePanelConfig(withFlowAction(action));
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+    }
+    throw new Error('it was accepted, and should not have been');
+};
+
+const BAR_DISPLAY = { style: 'bar', segmentId: 0, color: [0, 1, 2], trackColor: [0, 1, 2] };
+
+Deno.test('a display set in the flow is held to what the entity’s own would be', () => {
+    const accepted = parsePanelConfig(withFlowAction({ do: 'show', entityId: 'sensor.a', display: BAR_DISPLAY }));
+    const builtinBar = actionRefusal({
+        do: 'loop',
+        members: [{ id: 'clock', entityId: 'builtin.time', display: BAR_DISPLAY }],
+        dwellSeconds: 5,
+    });
+    const stray = actionRefusal({
+        do: 'show',
+        entityId: 'sensor.a',
+        display: { ...TEXT_DISPLAY, text: '{{sensor.gone}}' },
+    });
+
+    assertSame(accepted.flow[0].action.do === 'show' && accepted.flow[0].action.display?.style, 'bar', 'kept');
+    assertSame(builtinBar.includes('members[0].display.style'), true, `no bar on a built-in: ${builtinBar}`);
+    assertSame(stray.includes('action.display.text references sensor.gone'), true, `references: ${stray}`);
+});
+
+Deno.test('a loop refuses two members with one id, which would share a position', () => {
+    const message = actionRefusal({
+        do: 'loop',
+        members: [{ id: 'same', entityId: 'sensor.a' }, { id: 'same', entityId: 'builtin.time' }],
+        dwellSeconds: 5,
+    });
+
+    assertSame(message.includes('two members with the same id'), true, message);
 });

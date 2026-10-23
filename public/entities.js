@@ -154,7 +154,8 @@ const usedInFlow = (config, entityId) =>
         const inCondition = rule.conditions.some(condition => condition.entityId === entityId);
         const action = rule.action;
         const inShow = action.do === 'show' && action.entityId === entityId;
-        const inLoop = action.do === 'loop' && action.entityIds.includes(entityId);
+        const inLoop = action.do === 'loop'
+            && action.members.some(member => member.entityId === entityId);
         return inCondition || inShow || inLoop;
     });
 
@@ -266,7 +267,7 @@ const removeEntity = (config, entityId) => {
     for (const rule of config.flow) {
         rule.conditions = rule.conditions.filter(condition => condition.entityId !== entityId);
         if (rule.action.do === 'loop') {
-            rule.action.entityIds = rule.action.entityIds.filter(id => id !== entityId);
+            rule.action.members = rule.action.members.filter(member => member.entityId !== entityId);
         }
     }
 
@@ -275,7 +276,7 @@ const removeEntity = (config, entityId) => {
     config.flow = config.flow.map(rule => {
         const action = rule.action;
         const showsGone = action.do === 'show' && action.entityId === entityId;
-        const emptyLoop = action.do === 'loop' && action.entityIds.length === 0;
+        const emptyLoop = action.do === 'loop' && action.members.length === 0;
         if (showsGone || emptyLoop) {
             return { ...rule, action: { do: 'blank' } };
         }

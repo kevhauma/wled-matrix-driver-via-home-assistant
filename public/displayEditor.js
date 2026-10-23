@@ -52,7 +52,7 @@ const preview = createPanelPreview();
 const samples = new Map();
 
 /**
- * The JSON as typed, per entity, so that a keystroke that has not finished
+ * The JSON as typed, per view, so that a keystroke that has not finished
  * being valid JSON yet is not thrown away. The draft is what the textarea
  * shows; `display.payload` only moves on when it parses.
  */
@@ -158,9 +158,9 @@ const toStyle = (style, display) => {
     return { style: 'custom', payload };
 };
 
-const customFields = (entity, context, refresh) => {
-    const display = entity.display;
-    const stored = drafts.get(entity.entityId);
+const customFields = (view, context, refresh) => {
+    const display = view.holder.display;
+    const stored = drafts.get(view.key);
     const text = stored ?? JSON.stringify(display.payload, null, 2);
 
     const failure = make('p', { class: 'warning', hidden: true });
@@ -183,7 +183,7 @@ const customFields = (entity, context, refresh) => {
         value: text,
         onInput: event => {
             const next = event.target.value;
-            drafts.set(entity.entityId, next);
+            drafts.set(view.key, next);
 
             let parsed;
             try {
@@ -274,8 +274,9 @@ const formatField = (entity, context) => {
     return field('format', select);
 };
 
-const displayFields = (entity, context, refresh) => {
-    const display = entity.display;
+const displayFields = (view, context, refresh) => {
+    const { entity, holder } = view;
+    const display = holder.display;
 
     /**
      * Every field below that is typed into or dragged ends here rather than in
@@ -308,13 +309,16 @@ const displayFields = (entity, context, refresh) => {
             }
             // The draft belongs to the body being replaced, so keeping it would
             // put the old JSON back the next time `custom` was chosen.
-            drafts.delete(entity.entityId);
-            entity.display = toStyle(style, display);
+            drafts.delete(view.key);
+            holder.display = toStyle(style, display);
             context.changed();
         },
     }, styles);
 
-    const format = !isBuiltin ? null : formatField(entity, context);
+    // The format belongs to the entity, so it is set on the entity's own
+    // display and applies wherever the flow shows it.
+    const isFlowDisplay = view.target !== null;
+    const format = !isBuiltin || isFlowDisplay ? null : formatField(entity, context);
 
     if (display.style === 'custom') {
         return make('div', {}, [
@@ -323,7 +327,7 @@ const displayFields = (entity, context, refresh) => {
                 field('drawn as', stylePicker),
             ].filter(Boolean)),
             make('div', { style: 'height:14px' }),
-            customFields(entity, context, refresh),
+            customFields(view, context, refresh),
         ]);
     }
 
@@ -416,11 +420,15 @@ const describeCustom = result => {
     return lines.map(line => make('div', { textContent: line }));
 };
 
-const refreshPreview = async (entity, sample, nodes, context) => {
+const refreshPreview = async (view, sample, nodes, context) => {
+    const { entity } = view;
+    const display = view.holder.display;
     const unit = entity.kind === 'temperature' ? 'C' : entity.kind === 'percent' ? '%' : '';
     try {
         const result = await postJson('/api/preview', {
             entityId: entity.entityId,
+            target: view.target,
+            flow: context.config.flow,
             sampleValue: sample.value,
             sampleArtist: sample.artist,
             unit,
@@ -434,7 +442,7 @@ const refreshPreview = async (entity, sample, nodes, context) => {
             make('span', { class: 'warning', textContent: WARNING_TEXT[name] ?? name })
         ));
 
-        if (entity.display.style === 'custom') {
+        if (display.style === 'custom') {
             nodes.readout.replaceChildren(...describeCustom(result));
             // Nothing honest to draw: the mock-up knows one scrolling string or
             // one bar across the whole panel, and a custom body is neither.
@@ -445,12 +453,12 @@ const refreshPreview = async (entity, sample, nodes, context) => {
         nodes.readout.textContent = `segment name "${result.text}" — ${result.length} of 32 `
             + `characters, ${result.visible} visible at once`;
 
-        if (entity.display.style === 'bar') {
+        if (display.style === 'bar') {
             preview.show({
                 kind: 'bar',
                 percent: result.percent ?? 0,
-                color: entity.display.color,
-                trackColor: entity.display.trackColor,
+                color: display.color,
+                trackColor: display.trackColor,
             });
             return;
         }
@@ -459,8 +467,8 @@ const refreshPreview = async (entity, sample, nodes, context) => {
             kind: 'text',
             text: result.text,
             visible: result.visible,
-            color: entity.display.color,
-            speed: entity.display.speed,
+            color: display.color,
+            speed: display.speed,
         });
     } catch (error) {
         /**
@@ -492,7 +500,9 @@ const CAVEATS = {
  * updates the preview without a re-render — the two have to be able to reach
  * each other without the tab being rebuilt.
  */
-const previewCard = (entity, context) => {
+const previewCard = (view, context) => {
+    const { entity } = view;
+    const display = view.holder.display;
     const stored = samples.get(entity.entityId);
     const sample = stored ?? { value: SAMPLES[entity.kind] ?? '', artist: '' };
 
@@ -504,7 +514,7 @@ const previewCard = (entity, context) => {
     };
 
     const refresh = () => {
-        void refreshPreview(entity, sample, nodes, context);
+        void refreshPreview(view, sample, nodes, context);
     };
 
     const sampleInput = make('input', {
@@ -533,7 +543,7 @@ const previewCard = (entity, context) => {
         },
     });
 
-    const caveat = CAVEATS[entity.display.style];
+    const caveat = CAVEATS[display.style];
 
     /**
      * A built-in item has nothing to fake: the preview is reading the same
@@ -552,7 +562,7 @@ const previewCard = (entity, context) => {
 
     const node = card('Preview', [
         make('div', { class: 'preview' }, [
-            entity.display.style === 'custom' ? null : preview.canvas,
+            display.style === 'custom' ? null : preview.canvas,
             make('p', { class: 'caveat', textContent: caveat }),
             clockNote,
             isBuiltin ? null : field('sample value', sampleInput),
@@ -568,8 +578,84 @@ const previewCard = (entity, context) => {
     return { node, refresh };
 };
 
+/**
+ * What the tab is editing. Every holder of a display keeps it under the same
+ * `display` key — an entity, a `show` rule, a loop member — so the fields
+ * below write `view.holder.display` and never need to know which one it is.
+ *
+ * Falls back to the entity's own display when the flow target has gone or no
+ * longer sets one, which is what removing it from the flow tab leaves behind.
+ */
+const findView = context => {
+    const { config, selectedEntityId, selectedFlowTarget } = context;
+    const entity = config.entities.find(candidate => candidate.entityId === selectedEntityId)
+        ?? config.entities[0];
+
+    if (selectedFlowTarget !== null) {
+        const { ruleId, memberId } = selectedFlowTarget;
+        const rule = config.flow.find(candidate => candidate.id === ruleId);
+        const action = rule?.action;
+        const holder = action?.do === 'show'
+            ? action
+            : action?.do === 'loop'
+            ? action.members.find(member => member.id === memberId)
+            : undefined;
+        const owner = config.entities.find(candidate => candidate.entityId === holder?.entityId);
+        if (holder?.display !== undefined && owner !== undefined) {
+            const key = `${ruleId}/${memberId ?? ''}`;
+            return { key, entity: owner, holder, rule, target: selectedFlowTarget };
+        }
+    }
+
+    return { key: entity.entityId, entity, holder: entity, rule: undefined, target: null };
+};
+
+/** Where a display set in the flow lives, said the way the flow tab says it. */
+const describeTarget = view => {
+    const label = view.rule.label || view.rule.id;
+    const action = view.rule.action;
+    if (action.do === 'loop') {
+        const position = action.members.findIndex(member => member.id === view.target.memberId);
+        return `the rule “${label}”, rotation member ${position + 1}`;
+    }
+    return `the rule “${label}”`;
+};
+
+const flowDisplayHeader = (view, context) => make('div', {}, [
+    make('p', {
+        class: 'caveat',
+        textContent: `How ${view.entity.entityId} is drawn in ${describeTarget(view)} only. `
+            + 'Everywhere else it uses its own display.',
+    }),
+    make('div', { class: 'row' }, [
+        make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: '← back to the flow',
+            onClick: () => context.showTab('flow'),
+        }),
+        make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: `edit ${view.entity.entityId}’s own display`,
+            onClick: () => context.selectEntity(view.entity.entityId),
+        }),
+        make('button', {
+            class: 'small danger',
+            type: 'button',
+            textContent: 'use its own display here',
+            onClick: () => {
+                delete view.holder.display;
+                drafts.delete(view.key);
+                context.showTab('flow');
+                context.changed();
+            },
+        }),
+    ]),
+]);
+
 export const renderDisplay = (root, context) => {
-    const { config, selectedEntityId } = context;
+    const { config } = context;
     root.className = 'split';
 
     if (config.entities.length === 0) {
@@ -583,23 +669,23 @@ export const renderDisplay = (root, context) => {
         return;
     }
 
-    const entity = config.entities.find(candidate => candidate.entityId === selectedEntityId)
-        ?? config.entities[0];
+    const view = findView(context);
+    const { node, refresh } = previewCard(view, context);
 
     const ids = config.entities.map(candidate => candidate.entityId);
-    const picker = createLocalPicker({
-        ids,
-        value: entity.entityId,
-        placeholder: 'pick an entity',
-        onPick: entityId => context.selectEntity(entityId),
-    });
+    const heading = view.target !== null
+        ? flowDisplayHeader(view, context)
+        : field('entity', createLocalPicker({
+            ids,
+            value: view.entity.entityId,
+            placeholder: 'pick an entity',
+            onPick: entityId => context.selectEntity(entityId),
+        }));
 
-    const { node, refresh } = previewCard(entity, context);
-
-    const left = card('Display', [
-        field('entity', picker),
+    const left = card(view.target !== null ? 'Display in the flow' : 'Display', [
+        heading,
         make('div', { style: 'height:14px' }),
-        displayFields(entity, context, refresh),
+        displayFields(view, context, refresh),
     ]);
 
     root.append(

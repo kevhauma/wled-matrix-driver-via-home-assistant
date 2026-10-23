@@ -1,7 +1,7 @@
 import { BuiltinId, formatsFor, isBuiltinId } from './builtins.ts';
 import { Config } from './config.ts';
 import { EntityIds, PANEL_ENTITIES, PanelEntity, RGBColor, WledDisplay } from './entities.ts';
-import { Action, Condition, FlowRule } from './flow.ts';
+import { Action, Condition, FlowRule, LoopMember } from './flow.ts';
 import { findPlaceholders, isPlaceholder, PLACEHOLDER_NAMES } from './template.ts';
 
 /**
@@ -20,14 +20,14 @@ export type PanelOutputConfig = {
 };
 
 export type PanelConfig = {
-    version: 2,
+    version: 3,
     output: PanelOutputConfig,
     entities: PanelEntity[],
     flow: FlowRule[],
 };
 
 /** `configUpgrade.ts` brings an older file up to this before it is parsed. */
-export const CONFIG_VERSION = 2;
+export const CONFIG_VERSION = 3;
 
 /**
  * Reproduces exactly what `whatToShow` used to do in code: the television
@@ -60,7 +60,10 @@ export const defaultFlow = (rotateSeconds: number): FlowRule[] => [
         conditions: [],
         action: {
             do: 'loop',
-            entityIds: [EntityIds.Temperature, EntityIds.Battery],
+            members: [
+                { id: 'temperature', entityId: EntityIds.Temperature },
+                { id: 'battery', entityId: EntityIds.Battery },
+            ],
             dwellSeconds: rotateSeconds,
         },
     },
@@ -325,6 +328,12 @@ const READING_KINDS = ['percent', 'temperature', 'text'] as const;
  * Both are refused here rather than merely avoided in the editor, because this
  * validator is also what a hand-edited file goes through.
  */
+const refuseBarOnBuiltin = (entityId: string, display: WledDisplay, path: string): void => {
+    if (isBuiltinId(entityId) && display.style === 'bar') {
+        throw fail(`${path}.style`, `'text' or 'custom' for ${entityId}`, 'bar');
+    }
+};
+
 const parseBuiltin = (
     entityId: BuiltinId,
     record: Record<string, unknown>,
@@ -340,11 +349,7 @@ const parseBuiltin = (
     const format = asOneOf(record.format, `${path}.format`, allowed);
     const kind = asOneOf(record.kind, `${path}.kind`, ['text'] as const);
     const display = parseDisplay(record.display, `${path}.display`);
-
-    if (display.style === 'bar') {
-        throw fail(`${path}.display.style`, `'text' or 'custom' for ${entityId}`, 'bar');
-    }
-
+    refuseBarOnBuiltin(entityId, display, `${path}.display`);
     return { entityId, kind, format, display };
 };
 
@@ -427,6 +432,44 @@ const parseCondition = (value: unknown, path: string): Condition => {
     return { entityId, test, value: raw };
 };
 
+const parseMember = (value: unknown, path: string): LoopMember => {
+    const record = asRecord(value, path);
+    const id = asNonEmptyString(record.id, `${path}.id`);
+    const entityId = asNonEmptyString(record.entityId, `${path}.entityId`);
+    if (record.display === undefined) {
+        return { id, entityId };
+    }
+    const display = parseDisplay(record.display, `${path}.display`);
+    return { id, entityId, display };
+};
+
+/**
+ * A display the flow sets for itself is held to what the entity's own would
+ * be: no bar for a built-in, and only the panel's entities named in its
+ * placeholders. Checked after the whole file is read, because both depend on
+ * which entities there are.
+ */
+const checkFlowDisplays = (flow: readonly FlowRule[], entityIds: ReadonlySet<string>): void => {
+    flow.forEach((rule, index) => {
+        const path = `config.flow[${index}].action`;
+        const action = rule.action;
+        const targets = action.do === 'show'
+            ? [{ target: action, path }]
+            : action.do === 'loop'
+            ? action.members.map((member, position) => ({ target: member, path: `${path}.members[${position}]` }))
+            : [];
+
+        for (const { target, path: targetPath } of targets) {
+            if (target.display === undefined) {
+                continue;
+            }
+            const displayPath = `${targetPath}.display`;
+            refuseBarOnBuiltin(target.entityId, target.display, displayPath);
+            checkReferences(target.display, displayPath, entityIds);
+        }
+    });
+};
+
 const parseAction = (value: unknown, path: string): Action => {
     const record = asRecord(value, path);
     const kind = asOneOf(record.do, `${path}.do`, ['blank', 'show', 'loop'] as const);
@@ -437,20 +480,31 @@ const parseAction = (value: unknown, path: string): Action => {
 
     if (kind === 'show') {
         const entityId = asNonEmptyString(record.entityId, `${path}.entityId`);
-        return { do: 'show', entityId };
+        if (record.display === undefined) {
+            return { do: 'show', entityId };
+        }
+        const display = parseDisplay(record.display, `${path}.display`);
+        return { do: 'show', entityId, display };
     }
 
-    const members = asArray(record.entityIds, `${path}.entityIds`);
-    if (members.length === 0) {
-        throw fail(`${path}.entityIds`, 'at least one entity', record.entityIds);
+    const rawMembers = asArray(record.members, `${path}.members`);
+    if (rawMembers.length === 0) {
+        throw fail(`${path}.members`, 'at least one member', record.members);
     }
-    const entityIds = members.map((member, index) => {
-        const entityId = asNonEmptyString(member, `${path}.entityIds[${index}]`);
-        return entityId;
+    const members = rawMembers.map((member, index) => {
+        const parsed = parseMember(member, `${path}.members[${index}]`);
+        return parsed;
     });
+
+    const ids = members.map(member => member.id);
+    if (new Set(ids).size !== ids.length) {
+        // The rotation's position is kept by member id, so two would share one.
+        throw new Error(`${path}.members must not contain two members with the same id.`);
+    }
+
     // The service ticks once a second, so a finer dwell could not be honoured.
     const dwellSeconds = asNumberInRange(record.dwellSeconds, `${path}.dwellSeconds`, 1, 3600);
-    return { do: 'loop', entityIds, dwellSeconds };
+    return { do: 'loop', members, dwellSeconds };
 };
 
 const parseRule = (value: unknown, path: string): FlowRule => {
@@ -505,6 +559,8 @@ export const parsePanelConfig = (value: unknown): PanelConfig => {
         // Loop positions are keyed by rule id, so duplicates would share one.
         throw new Error('config.flow must not contain two rules with the same id.');
     }
+
+    checkFlowDisplays(flow, entityIds);
 
     return { version: CONFIG_VERSION, output: { wledIp, brightness }, entities, flow };
 };

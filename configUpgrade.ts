@@ -33,8 +33,35 @@ const toVersion2 = (config: Json): Json => {
     return { ...config, version: 2, entities: upgraded };
 };
 
+/**
+ * Version 3 made a loop's members objects with ids of their own, so that one
+ * entity can be a member twice with a different display each time. The old
+ * entity id becomes the member id, numbered only where an old file somehow
+ * repeated one.
+ */
+const toVersion3 = (config: Json): Json => {
+    const flow = Array.isArray(config.flow) ? config.flow : [];
+    const upgraded = flow.map(rule => {
+        if (!isRecord(rule) || !isRecord(rule.action) || rule.action.do !== 'loop') {
+            return rule;
+        }
+        const { entityIds, ...action } = rule.action;
+        const ids = Array.isArray(entityIds) ? entityIds : [];
+        const seen = new Map<unknown, number>();
+        const members = ids.map(entityId => {
+            const count = seen.get(entityId) ?? 0;
+            seen.set(entityId, count + 1);
+            const id = count === 0 ? String(entityId) : `${entityId}-${count + 1}`;
+            return { id, entityId };
+        });
+        return { ...rule, action: { ...action, members } };
+    });
+    return { ...config, version: 3, flow: upgraded };
+};
+
 const STEPS: Record<number, (config: Json) => Json> = {
     1: toVersion2,
+    2: toVersion3,
 };
 
 export type Upgraded = {

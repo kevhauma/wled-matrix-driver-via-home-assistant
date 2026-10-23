@@ -1,5 +1,5 @@
 import { defaultFormatFor, isBuiltinId } from './builtins.ts';
-import { PanelEntity } from './entities.ts';
+import { PanelEntity, WledDisplay } from './entities.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
 import { readBuiltin, readEntity, Reading } from './readings.ts';
 import {
@@ -125,7 +125,14 @@ const previewReading = (entity: PanelEntity, sample: PreviewSample): Reading => 
 export type PreviewInput = {
     /** Every entity, because the payload switches the other segments off. */
     entities: readonly PanelEntity[],
+    /** And every display the flow sets for itself, for the same reason. */
+    flowDisplays: readonly WledDisplay[],
     entityId: string,
+    /**
+     * A display the flow sets for this entity in one place, to preview
+     * instead of the entity's own. Absent previews the entity's own.
+     */
+    display: WledDisplay | undefined,
     sampleValue: string,
     unit: string,
     /** Only a media player has one, and only then is it asked for. */
@@ -142,7 +149,17 @@ export type PreviewInput = {
 };
 
 export const toPreview = (
-    { entities, entityId, sampleValue, unit, sampleArtist, brightness, liveReadings }: PreviewInput,
+    {
+        entities,
+        flowDisplays,
+        entityId,
+        display: override,
+        sampleValue,
+        unit,
+        sampleArtist,
+        brightness,
+        liveReadings,
+    }: PreviewInput,
 ): Preview => {
     const entity = entities.find(candidate => candidate.entityId === entityId);
     if (entity === undefined) {
@@ -155,15 +172,18 @@ export const toPreview = (
     const readings = new Map(liveReadings);
     readings.set(entityId, reading);
     const others = toEntityValues(readings);
-    const text = toDisplayText(entity.display, reading, others);
+    const display = override ?? entity.display;
+    const text = toDisplayText(display, reading, others);
 
     /**
      * The whole payload, not just this entity's segment: `toWledPayload` adds
      * the `{ id, on: false }` entries that clear the other segments, and those
      * are part of what gets sent.
      */
-    const decision = { show: 'entity' as const, entityId };
-    const payload = toWledPayload({ decision, entities, readings, brightness });
+    const decision = override === undefined
+        ? { show: 'entity' as const, entityId }
+        : { show: 'entity' as const, entityId, display: override };
+    const payload = toWledPayload({ decision, entities, flowDisplays, readings, brightness });
 
     const visible = visibleLetters(PANEL_COLUMNS);
     const warnings: PreviewWarning[] = [];
@@ -176,14 +196,14 @@ export const toPreview = (
         warnings.push('strippedNonAscii');
     }
 
-    if (entity.display.style === 'custom') {
+    if (display.style === 'custom') {
         /**
          * Read back out of the finished payload rather than filled a second
          * time here, so what the editor lists is literally what is going to be
          * sent. The `{ id, on: false }` entries `toWledPayload` appends for the
          * other entities' segments are left out: those are not this display.
          */
-        const ownIds = segmentIdsOf(entity.display);
+        const ownIds = segmentIdsOf(display);
         const segments = Array.isArray(payload.seg) ? payload.seg : [];
         for (const segment of segments) {
             const fields = segment as Record<string, unknown>;
@@ -202,14 +222,14 @@ export const toPreview = (
         }
     }
 
-    if (entity.display.style === 'text') {
+    if (display.style === 'text') {
         /**
          * Compared against the fullest form `toDisplayText` had to choose
          * from, not against the typed value: a temperature is *meant* to come
          * out as `18C`, and calling that a shortening would cry wolf on every
          * numeric reading.
          */
-        const options = toTextOptions(entity.display, reading, others);
+        const options = toTextOptions(display, reading, others);
         const longest = options[0] ?? '';
         if (text !== longest) {
             warnings.push('shortened');

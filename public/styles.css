@@ -413,8 +413,18 @@ label.field {
     gap: 8px;
 }
 
-.loop-member .mono {
-    margin-right: auto;
+.loop-member .spacer {
+    flex: 1;
+}
+
+/* What a member or a show rule draws when the flow sets its own display. */
+.loop-member .badge,
+.then .badge {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
 }
 
 /* --- the panel preview --- */

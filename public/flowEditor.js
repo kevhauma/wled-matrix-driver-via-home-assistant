@@ -164,15 +164,80 @@ const conditionRow = (rule, condition, index, context) => {
     ]);
 };
 
+const newMemberId = () => `member-${Math.random().toString(36).slice(2, 8)}`;
+
+/** A few words on a display the flow sets, so a member says what it draws. */
+const summarise = display => {
+    if (display.style === 'text') {
+        return display.text;
+    }
+    return display.style === 'bar' ? 'a bar' : 'custom JSON';
+};
+
+/**
+ * The control for drawing an entity differently here than everywhere else.
+ * Starting one copies the entity's own display, so the first thing you see on
+ * the Display tab is what it already looked like, not a blank to fill in.
+ */
+const viewControls = (holder, target, context) => {
+    const { config } = context;
+    const edit = () => context.editFlowDisplay(target, holder.entityId);
+
+    if (holder.display === undefined) {
+        return [make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: 'own view…',
+            title: 'Draw it differently here than everywhere else',
+            onClick: () => {
+                const entity = config.entities.find(candidate => candidate.entityId === holder.entityId);
+                if (entity === undefined) {
+                    return;
+                }
+                holder.display = structuredClone(entity.display);
+                edit();
+            },
+        })];
+    }
+
+    return [
+        make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: 'edit view',
+            title: 'How it is drawn here only',
+            onClick: edit,
+        }),
+        make('button', {
+            class: 'small danger',
+            type: 'button',
+            textContent: 'reset',
+            title: 'Use the entity’s own display here again',
+            onClick: () => {
+                delete holder.display;
+                context.changed();
+            },
+        }),
+    ];
+};
+
 const loopEditor = (rule, context) => {
     const { config } = context;
     const action = rule.action;
-    const available = config.entities
-        .map(entity => entity.entityId)
-        .filter(entityId => !action.entityIds.includes(entityId));
+    // Every entity, including ones already in the rotation: a member is a
+    // place in it, so the same media player can be its title and then its
+    // artist.
+    const ids = config.entities.map(entity => entity.entityId);
 
-    const members = action.entityIds.map((entityId, index) => make('div', { class: 'loop-member' }, [
-        make('span', { class: 'mono', textContent: `${index + 1}. ${entityId}` }),
+    const members = action.members.map((member, index) => make('div', { class: 'loop-member' }, [
+        make('span', { class: 'mono', textContent: `${index + 1}. ${member.entityId}` }),
+        member.display === undefined ? null : make('span', {
+            class: 'badge',
+            textContent: summarise(member.display),
+            title: `Drawn its own way here: ${summarise(member.display)}`,
+        }),
+        make('span', { class: 'spacer' }),
+        ...viewControls(member, { ruleId: rule.id, memberId: member.id }, context),
         make('button', {
             class: 'small',
             type: 'button',
@@ -180,8 +245,8 @@ const loopEditor = (rule, context) => {
             disabled: index === 0,
             title: 'Earlier in the rotation',
             onClick: () => {
-                const [moved] = action.entityIds.splice(index, 1);
-                action.entityIds.splice(index - 1, 0, moved);
+                const [moved] = action.members.splice(index, 1);
+                action.members.splice(index - 1, 0, moved);
                 context.changed();
             },
         }),
@@ -189,11 +254,11 @@ const loopEditor = (rule, context) => {
             class: 'small',
             type: 'button',
             textContent: '↓',
-            disabled: index === action.entityIds.length - 1,
+            disabled: index === action.members.length - 1,
             title: 'Later in the rotation',
             onClick: () => {
-                const [moved] = action.entityIds.splice(index, 1);
-                action.entityIds.splice(index + 1, 0, moved);
+                const [moved] = action.members.splice(index, 1);
+                action.members.splice(index + 1, 0, moved);
                 context.changed();
             },
         }),
@@ -201,24 +266,24 @@ const loopEditor = (rule, context) => {
             class: 'small danger',
             type: 'button',
             textContent: '×',
-            disabled: action.entityIds.length === 1,
-            title: action.entityIds.length === 1
+            disabled: action.members.length === 1,
+            title: action.members.length === 1
                 ? 'A rotation needs at least one entity'
                 : 'Take out of the rotation',
             onClick: () => {
-                action.entityIds.splice(index, 1);
+                action.members.splice(index, 1);
                 context.changed();
             },
         }),
     ]));
 
-    const adder = available.length === 0 ? null : make('div', { class: 'loop-member' }, [
+    const adder = ids.length === 0 ? null : make('div', { class: 'loop-member' }, [
         createLocalPicker({
-            ids: available,
+            ids,
             value: '',
             placeholder: 'add an entity…',
             onPick: entityId => {
-                action.entityIds.push(entityId);
+                action.members.push({ id: newMemberId(), entityId });
                 context.changed();
             },
         }),
@@ -243,10 +308,33 @@ const loopEditor = (rule, context) => {
         make('div', { class: 'row', style: 'margin-top:10px;max-width:160px' }, [dwell]),
         make('p', {
             class: 'caveat',
-            textContent: 'Interrupted and then resumed, a rotation comes back to the entity it '
-                + 'was on and gives it a full turn.',
+            textContent: 'Interrupted and then resumed, a rotation comes back to the member it '
+                + 'was on and gives it a full turn. “own view…” draws a member differently '
+                + 'here than everywhere else.',
         }),
     ]);
+};
+
+/**
+ * Switching between `show` and `loop` carries the entity and any display set
+ * here across, in either direction, so changing your mind costs nothing.
+ */
+const toAction = (kind, action, config) => {
+    const firstId = config.entities[0]?.entityId;
+    if (kind === 'blank') {
+        return { do: 'blank' };
+    }
+
+    const current = action.do === 'show' ? action : action.do === 'loop' ? action.members[0] : undefined;
+    const entityId = current?.entityId ?? firstId;
+    const display = current?.display;
+    const kept = display === undefined ? {} : { display };
+
+    if (kind === 'show') {
+        return { do: 'show', entityId, ...kept };
+    }
+    const members = entityId === undefined ? [] : [{ id: newMemberId(), entityId, ...kept }];
+    return { do: 'loop', members, dwellSeconds: 5 };
 };
 
 const actionEditor = (rule, context) => {
@@ -255,17 +343,7 @@ const actionEditor = (rule, context) => {
 
     const picker = make('select', {
         onChange: event => {
-            const kind = event.target.value;
-            const firstId = config.entities[0]?.entityId;
-            if (kind === 'blank') {
-                rule.action = { do: 'blank' };
-            } else if (kind === 'show') {
-                rule.action = { do: 'show', entityId: action.entityId ?? firstId };
-            } else {
-                const existing = action.do === 'show' ? [action.entityId] : undefined;
-                const members = existing ?? (firstId === undefined ? [] : [firstId]);
-                rule.action = { do: 'loop', entityIds: members, dwellSeconds: 5 };
-            }
+            rule.action = toAction(event.target.value, action, config);
             context.changed();
         },
     }, Object.entries(ACTIONS).map(([value, text]) => option(value, text, value === action.do)));
@@ -277,11 +355,18 @@ const actionEditor = (rule, context) => {
         })
         : null;
 
+    const controls = action.do === 'show' ? viewControls(action, { ruleId: rule.id }, context) : [];
+    const summary = action.do === 'show' && action.display !== undefined
+        ? make('span', { class: 'badge', textContent: summarise(action.display) })
+        : null;
+
     return make('div', {}, [
         make('div', { class: 'then' }, [
             make('span', { class: 'keyword', textContent: 'THEN' }),
             make('div', { style: 'min-width:170px' }, [picker]),
             extra === null ? null : make('div', { style: 'min-width:220px;flex:1' }, [extra]),
+            summary,
+            ...controls,
         ]),
         action.do === 'loop' ? loopEditor(rule, context) : null,
     ]);

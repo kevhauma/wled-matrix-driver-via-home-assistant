@@ -7,6 +7,8 @@
  * longer carry a `role` — the order of the rules *is* the priority.
  */
 
+import { WledDisplay } from './entities.ts';
+
 export const ConditionTests = {
     /** A media player that is actually playing, not merely on. */
     IsPlaying: 'isPlaying',
@@ -55,10 +57,44 @@ export const ActionKinds = {
 
 export type ActionKind = typeof ActionKinds[keyof typeof ActionKinds];
 
+/**
+ * One loop member: an entity, and optionally the display it gets in this
+ * place only. Its own `id` is what lets the same entity be a member twice —
+ * a media player's title, then its artist — because the rotation's position
+ * is kept by member, not by entity.
+ */
+export type LoopMember = {
+    id: string,
+    entityId: string,
+    /** Replaces the entity's own display here; absent means use that one. */
+    display?: WledDisplay,
+};
+
 export type Action =
     | { do: 'blank' }
-    | { do: 'show', entityId: string }
-    | { do: 'loop', entityIds: string[], dwellSeconds: number };
+    | {
+        do: 'show',
+        entityId: string,
+        /** Replaces the entity's own display for this rule only. */
+        display?: WledDisplay,
+    }
+    | { do: 'loop', members: LoopMember[], dwellSeconds: number };
+
+/**
+ * Every display the flow sets for itself. `wled.ts` needs them to know which
+ * segments exist, so that it can switch off the ones not being drawn.
+ */
+export const displaysInFlow = (flow: readonly FlowRule[]): WledDisplay[] =>
+    flow.flatMap(rule => {
+        const action = rule.action;
+        if (action.do === 'show') {
+            return action.display === undefined ? [] : [action.display];
+        }
+        if (action.do === 'loop') {
+            return action.members.flatMap(member => member.display === undefined ? [] : [member.display]);
+        }
+        return [];
+    });
 
 export type FlowRule = {
     /**
@@ -77,12 +113,12 @@ export type FlowRule = {
 /**
  * Which member of a loop is up, and when it took the panel.
  *
- * Keyed by entity id rather than by position so that reordering a loop's
- * members in the editor cannot silently point at a different entity, and so
+ * Keyed by member id rather than by position so that reordering a loop's
+ * members in the editor cannot silently point at a different one, and so
  * that what the panel is doing survives being written into `/api/state`.
  */
 export type LoopState = {
-    entityId: string,
+    memberId: string,
     sinceMilliseconds: number,
     /**
      * Whether this loop held the panel at the previous decision. Without it,

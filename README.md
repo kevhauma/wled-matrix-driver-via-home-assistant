@@ -81,9 +81,32 @@ all, so the rules below it are tried. That is why a flow wants a conditionless
 rule at the bottom.
 
 Rotations have memory. Interrupted by music and then resumed, one comes back to
-the entity it was on and gives it a full turn, rather than counting the
+the member it was on and gives it a full turn, rather than counting the
 interruption against it. That position is not persisted: a restart begins at the
 first member.
+
+### A display of its own in the flow
+
+Every entity has one display of its own, used wherever the flow shows it. A
+`show` rule or a loop member can set a `display` that replaces it **in that
+place only** — "own view…" on the Flow tab copies the entity's display into it
+and opens it on the Display tab.
+
+A loop's members are objects with ids of their own, which is what lets **one
+entity be a member twice**. A media player's title, then its artist:
+
+```json
+{
+    "do": "loop",
+    "dwellSeconds": 5,
+    "members": [
+        { "id": "title", "entityId": "media_player.living_room",
+          "display": { "style": "text", "segmentId": 0, "color": [255, 255, 255], "speed": 80, "text": "{{title}}" } },
+        { "id": "artist", "entityId": "media_player.living_room",
+          "display": { "style": "text", "segmentId": 0, "color": [255, 160, 0], "speed": 80, "text": "{{artist}}" } }
+    ]
+}
+```
 
 ### Adding an entity
 
@@ -225,7 +248,8 @@ device and a Home Assistant instance on it.
   With no `HA_TOKEN` the picker offers the mock source's own ids instead. The
   two built-in items are always at the top of it.
 - **Flow** — the chain above, as blocks you reorder. The block currently
-  deciding is marked as you watch.
+  deciding is marked as you watch. "own view…" beside a `show` target or a loop
+  member gives it a display of its own; "edit view" opens it, "reset" drops it.
 - **Display** — how one entity is drawn, with a mock-up of the panel, the exact
   segment name, and the real `/json/state` body. A custom display swaps the
   mock-up for a JSON editor and lists what each of its segment names filled to;
@@ -254,7 +278,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 95 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 101 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -297,9 +321,18 @@ Configuration:
 
 - **An older `panel.config.json` is upgraded as it is read, and rewritten only
   by the next save.** `configUpgrade.ts` takes it one version at a time — 1 to 2
-  folded a text display's `prefix` into its `text` template — and the start-up
+  folded a text display's `prefix` into its `text` template, 2 to 3 made a
+  loop's members objects with ids — and the start-up
   log says when it did. Until you save, the file on disk is still the old
   version, so it can be read by the old code.
+- **A display set in the flow is a copy, not a link.** It starts as the
+  entity's own and then goes its own way: changing the entity's colour later
+  does not reach it. "reset" goes back to following the entity. A built-in's
+  `format` is the exception — it belongs to the entity, so it is the same
+  everywhere, and the Display tab only offers it on the entity's own display.
+- **A loop member's `id` is what the rotation remembers**, not its entity — the
+  same entity can be there twice. Version 3 turned an old `entityIds` list into
+  members whose ids are the entity ids.
 - **`WLED_IP` and `WLED_BRIGHTNESS` seed `panel.config.json` once, then the file
   wins.** Editing `.env` afterwards does nothing, which is confusing exactly
   once. Delete the file to seed it again. `HA_BASE_URL`, `HA_TOKEN` and `PORT`
@@ -464,7 +497,7 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 95 tests, no hardware and no Home Assistant:
+`deno task test` — 101 tests, no hardware and no Home Assistant:
 
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`
@@ -487,7 +520,14 @@ Home Assistant's compressed WebSocket format:
   colon, a whole-string reference keeping its type, an absent one filling
   empty, one display drawing two temperatures, and the validator refusing an
   id that is not on the panel and a typo'd name after the colon
-- an old file: version 1 upgraded and then passing the current validator, a
+- displays set in the flow: one entity a loop member twice with a display each,
+  alternating; a `show` rule passing its display on and none when it has none;
+  the override replacing the entity's own on the panel, with the segment it is
+  not using switched off either way; the validator holding one to the entity's
+  rules (no bar on a built-in, only the panel's entities named) and refusing
+  two members with one id
+- an old file: version 2's loop entity ids becoming members, numbered only
+  where one repeats; version 1 upgraded and then passing the current validator, a
   `prefix` becoming the text in front of `{{value}}`, and a current file passed
   through untouched
 - the payloads: `ix` carrying the percentage, the bar's `m12`/`tp`/`rY` going

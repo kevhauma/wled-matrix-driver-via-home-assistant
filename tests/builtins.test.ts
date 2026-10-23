@@ -120,6 +120,7 @@ Deno.test('a clock reaches the device as an ordinary text segment', () => {
     const payload = toWledPayload({
         decision: { show: 'entity', entityId: BuiltinIds.Time },
         entities: [clock],
+        flowDisplays: [],
         readings,
         brightness: 80,
     });

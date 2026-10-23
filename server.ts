@@ -11,6 +11,8 @@ import {
     toLibraryItem,
     toLimit,
 } from './library.ts';
+import { WledDisplay } from './entities.ts';
+import { displaysInFlow } from './flow.ts';
 import { PanelConfig, parsePanelConfig } from './panelConfig.ts';
 import { toPreview } from './preview.ts';
 import { MOCK_ENTITY_IDS } from './source.ts';
@@ -97,6 +99,31 @@ const mockLibrary = (): LibraryItem[] =>
     }));
 
 /**
+ * Which display in the flow the editor is previewing: a `show` rule's, or one
+ * loop member's. Named by id rather than sent as a display, so the one
+ * previewed is the one the validator has just checked as part of the draft.
+ */
+const findFlowDisplay = (panel: PanelConfig, target: unknown): WledDisplay | undefined => {
+    if (typeof target !== 'object' || target === null) {
+        return undefined;
+    }
+    const { ruleId, memberId } = target as Record<string, unknown>;
+    const rule = panel.flow.find(candidate => candidate.id === ruleId);
+    if (rule === undefined) {
+        throw new RequestError(400, `There is no rule '${String(ruleId)}' in the draft.`);
+    }
+    const action = rule.action;
+    if (action.do === 'show') {
+        return action.display;
+    }
+    if (action.do === 'loop') {
+        const member = action.members.find(candidate => candidate.id === memberId);
+        return member?.display;
+    }
+    return undefined;
+};
+
+/**
  * The picker searches as you type, and on an installation with a few thousand
  * entities each of those searches would otherwise be a fresh `/api/states` —
  * megabytes of JSON, fetched again for every word. Cached for long enough to
@@ -179,15 +206,31 @@ export const startServer = (
          * Previewing against the draft the editor is holding, not the saved
          * config, is the whole point — you need to see an edit before saving it.
          */
+        /**
+         * A 400, not a thrown error: the editor previews keystroke by
+         * keystroke, so a draft the validator refuses is the normal case, and
+         * it does not belong in the service's log as a failure.
+         */
         const current = panel();
-        const draft = record.entities === undefined
-            ? current
-            : parsePanelConfig({ ...current, entities: record.entities });
+        let draft: PanelConfig;
+        try {
+            draft = parsePanelConfig({
+                ...current,
+                entities: record.entities ?? current.entities,
+                flow: record.flow ?? current.flow,
+            });
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new RequestError(400, detail);
+        }
+        const display = findFlowDisplay(draft, record.target);
 
         try {
             const preview = toPreview({
                 entities: draft.entities,
+                flowDisplays: displaysInFlow(draft.flow),
                 entityId,
+                display,
                 sampleValue,
                 unit,
                 sampleArtist,
