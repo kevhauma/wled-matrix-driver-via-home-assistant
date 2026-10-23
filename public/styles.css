@@ -376,6 +376,21 @@ label.field {
     margin-bottom: 8px;
 }
 
+/* A window has no entity picker, and two time fields need the room. */
+.condition.time {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.8fr) auto;
+}
+
+.condition .window {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.condition .window input {
+    min-width: 0;
+}
+
 .then {
     display: flex;
     align-items: center;

@@ -203,3 +203,37 @@ Deno.test('a custom body is allowed on a built-in, which is the way to compose o
 
     assertSame(parsed.entities[0].display.style, 'custom', 'accepted');
 });
+
+const withCondition = (condition: unknown): unknown => ({
+    version: 1,
+    output: { wledIp: '', brightness: 80 },
+    entities: [],
+    flow: [{ id: 'night', match: 'all', conditions: [condition], action: { do: 'blank' } }],
+});
+
+const conditionRefusal = (condition: unknown): string => {
+    try {
+        parsePanelConfig(withCondition(condition));
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+    }
+    throw new Error('it was accepted, and should not have been');
+};
+
+Deno.test('a time window is accepted without an entity', () => {
+    const parsed = parsePanelConfig(withCondition({ test: 'timeBetween', from: '22:00', to: '07:00' }));
+    const condition = parsed.flow[0].conditions[0];
+
+    assertSame(condition.test === 'timeBetween' && condition.from, '22:00', 'kept its start');
+    assertSame('entityId' in condition, false, 'and gained no entity');
+});
+
+Deno.test('a time window refuses a malformed time, an equal start and end, and an entity', () => {
+    const malformed = conditionRefusal({ test: 'timeBetween', from: '7:00', to: '08:00' });
+    const empty = conditionRefusal({ test: 'timeBetween', from: '08:00', to: '08:00' });
+    const tied = conditionRefusal({ test: 'timeBetween', entityId: 'sensor.a', from: '01:00', to: '02:00' });
+
+    assertSame(malformed.includes('conditions[0].from'), true, `malformed names the field: ${malformed}`);
+    assertSame(empty.includes('different from'), true, `equal is refused: ${empty}`);
+    assertSame(tied.includes('conditions[0].entityId'), true, `an entity is refused: ${tied}`);
+});

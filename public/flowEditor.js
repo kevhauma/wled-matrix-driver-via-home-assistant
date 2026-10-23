@@ -17,7 +17,11 @@ const TESTS = {
     above: 'is above',
     below: 'is below',
     equals: 'state equals',
+    timeBetween: 'the time is between',
 };
+
+/** What a window starts as, chosen to be the obvious one: the night. */
+const DEFAULT_WINDOW = { from: '22:00', to: '07:00' };
 
 const TESTS_NEEDING_VALUE = ['above', 'below', 'equals'];
 
@@ -55,7 +59,86 @@ const entityPicker = (config, selected, onPick) => {
     return createLocalPicker({ ids, value: selected ?? '', onPick, placeholder: 'pick an entity' });
 };
 
+/**
+ * Switching between an entity test and the time window swaps which fields the
+ * condition carries, so a saved one never holds an entity it does not read or
+ * a window it does not use — the validator refuses both.
+ */
+const setTest = (condition, test, config) => {
+    const wasTime = condition.test === 'timeBetween';
+    const isTime = test === 'timeBetween';
+    condition.test = test;
+
+    if (isTime) {
+        delete condition.entityId;
+        delete condition.value;
+        condition.from = condition.from ?? DEFAULT_WINDOW.from;
+        condition.to = condition.to ?? DEFAULT_WINDOW.to;
+        return;
+    }
+
+    if (wasTime) {
+        delete condition.from;
+        delete condition.to;
+        condition.entityId = config.entities[0]?.entityId ?? '';
+    }
+
+    const needsValue = TESTS_NEEDING_VALUE.includes(test);
+    if (!needsValue) {
+        delete condition.value;
+    } else if (condition.value === undefined) {
+        condition.value = test === 'equals' ? '' : 0;
+    }
+};
+
+const removeButton = (rule, index, context) => make('button', {
+    class: 'small danger',
+    type: 'button',
+    textContent: '×',
+    title: 'Remove this condition',
+    onClick: () => {
+        rule.conditions.splice(index, 1);
+        context.changed();
+    },
+});
+
+const testPicker = (condition, context) => make('select', {
+    onChange: event => {
+        setTest(condition, event.target.value, context.config);
+        context.changed();
+    },
+}, Object.entries(TESTS).map(([value, text]) => option(value, text, value === condition.test)));
+
+const timeInput = (condition, key, context) => make('input', {
+    type: 'time',
+    value: condition[key],
+    // An empty field is a half-typed time, which the validator would refuse
+    // on save; keeping the last whole one is less surprising.
+    onInput: event => {
+        if (event.target.value === '') {
+            return;
+        }
+        condition[key] = event.target.value;
+        context.edited();
+    },
+});
+
+const timeRow = (rule, condition, index, context) => make('div', { class: 'condition time' }, [
+    make('span', { class: 'caveat', textContent: 'this machine’s clock' }),
+    testPicker(condition, context),
+    make('div', { class: 'window' }, [
+        timeInput(condition, 'from', context),
+        make('span', { class: 'caveat', textContent: 'and' }),
+        timeInput(condition, 'to', context),
+    ]),
+    removeButton(rule, index, context),
+]);
+
 const conditionRow = (rule, condition, index, context) => {
+    if (condition.test === 'timeBetween') {
+        return timeRow(rule, condition, index, context);
+    }
+
     const { config } = context;
     const needsValue = TESTS_NEEDING_VALUE.includes(condition.test);
 
@@ -75,31 +158,9 @@ const conditionRow = (rule, condition, index, context) => {
             condition.entityId = value;
             context.changed();
         }),
-        make('select', {
-            onChange: event => {
-                condition.test = event.target.value;
-                const stillNeeds = TESTS_NEEDING_VALUE.includes(condition.test);
-                if (!stillNeeds) {
-                    delete condition.value;
-                } else if (condition.value === undefined) {
-                    condition.value = condition.test === 'equals' ? '' : 0;
-                }
-                context.changed();
-            },
-        }, Object.entries(TESTS).map(([value, text]) =>
-            option(value, text, value === condition.test)
-        )),
+        testPicker(condition, context),
         needsValue ? valueInput : make('span', {}),
-        make('button', {
-            class: 'small danger',
-            type: 'button',
-            textContent: '×',
-            title: 'Remove this condition',
-            onClick: () => {
-                rule.conditions.splice(index, 1);
-                context.changed();
-            },
-        }),
+        removeButton(rule, index, context),
     ]);
 };
 
@@ -334,6 +395,16 @@ const ruleCard = (rule, index, context) => {
         },
     });
 
+    const addWindow = make('button', {
+        class: 'small',
+        type: 'button',
+        textContent: '+ time window',
+        onClick: () => {
+            rule.conditions.push({ test: 'timeBetween', ...DEFAULT_WINDOW });
+            context.changed();
+        },
+    });
+
     /**
      * A loop is the one action that can decline, so saying "nothing below is
      * reached" would be wrong for it — that is exactly the case the trailing
@@ -353,7 +424,7 @@ const ruleCard = (rule, index, context) => {
         ...conditions,
         rule.conditions.length === 0 ? noConditions : null,
         matchPicker,
-        make('div', { class: 'row', style: 'margin-top:8px' }, [addCondition]),
+        make('div', { class: 'row', style: 'margin-top:8px' }, [addCondition, addWindow]),
         actionEditor(rule, context),
     ]);
 

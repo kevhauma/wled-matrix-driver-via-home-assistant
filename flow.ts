@@ -18,16 +18,33 @@ export const ConditionTests = {
     Below: 'below',
     /** Compares against the entity's raw state string. */
     Equals: 'equals',
+    /** Reads this host's clock, not an entity. */
+    TimeBetween: 'timeBetween',
 } as const;
 
 export type ConditionTest = typeof ConditionTests[keyof typeof ConditionTests];
 
-export type Condition = {
+export type EntityCondition = {
     entityId: string,
-    test: ConditionTest,
+    test: Exclude<ConditionTest, 'timeBetween'>,
     /** Only `above`, `below` and `equals` use this. */
     value?: number | string,
 };
+
+/**
+ * True from `from` up to but not including `to`, both `HH:MM` on this host's
+ * local clock. A window whose `to` is earlier than its `from` runs past
+ * midnight, so `22:00`-`07:00` is the night. `from` and `to` cannot be equal:
+ * that could mean an empty window or the whole day, and the validator refuses
+ * to guess which.
+ */
+export type TimeCondition = {
+    test: 'timeBetween',
+    from: string,
+    to: string,
+};
+
+export type Condition = EntityCondition | TimeCondition;
 
 export const ActionKinds = {
     Blank: 'blank',

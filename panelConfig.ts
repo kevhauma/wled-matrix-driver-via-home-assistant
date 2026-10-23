@@ -334,12 +334,43 @@ const CONDITION_TESTS = [
     'above',
     'below',
     'equals',
+    'timeBetween',
 ] as const;
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const asTime = (value: unknown, path: string): string => {
+    const text = asString(value, path);
+    if (!TIME_PATTERN.test(text)) {
+        throw fail(path, 'a 24-hour time like 07:30', value);
+    }
+    return text;
+};
+
+const parseTimeCondition = (record: Record<string, unknown>, path: string): Condition => {
+    // Refused rather than ignored, for the same reason a stray `format` is:
+    // it would read as though the window were tied to that entity.
+    if (record.entityId !== undefined) {
+        throw fail(`${path}.entityId`, 'absent — a time window reads the clock', record.entityId);
+    }
+    const from = asTime(record.from, `${path}.from`);
+    const to = asTime(record.to, `${path}.to`);
+    if (from === to) {
+        throw fail(`${path}.to`, `different from 'from' (${from})`, to);
+    }
+    return { test: 'timeBetween', from, to };
+};
 
 const parseCondition = (value: unknown, path: string): Condition => {
     const record = asRecord(value, path);
-    const entityId = asNonEmptyString(record.entityId, `${path}.entityId`);
     const test = asOneOf(record.test, `${path}.test`, CONDITION_TESTS);
+
+    if (test === 'timeBetween') {
+        const condition = parseTimeCondition(record, path);
+        return condition;
+    }
+
+    const entityId = asNonEmptyString(record.entityId, `${path}.entityId`);
 
     const needsValue = test === 'above' || test === 'below' || test === 'equals';
     if (!needsValue) {

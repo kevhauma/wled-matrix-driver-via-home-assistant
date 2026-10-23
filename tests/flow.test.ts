@@ -177,3 +177,37 @@ Deno.test('a member that drops out mid-rotation hands over rather than stalling'
 
     assertSame(shown.join(' '), [TEMP, BATTERY].join(' '), 'took the surviving member at once');
 });
+
+/** Built from local fields, so these hold whatever timezone the tests run in. */
+const at = (hours: number, minutes: number): number =>
+    new Date(2026, 9, 23, hours, minutes).getTime();
+
+const nightFlow = (from: string, to: string): FlowRule[] => [
+    rule('night', {
+        conditions: [{ test: 'timeBetween', from, to }],
+        action: { do: 'blank' },
+    }),
+    rule('temp', { action: { do: 'show', entityId: TEMP } }),
+];
+
+const shownAt = (flow: readonly FlowRule[], times: readonly number[]): string => {
+    const moments = times.map(time => ({ at: time, readings: { [TEMP]: WARM } }));
+    const decisions = play(flow, moments);
+    return decisions.map(decision => decision.show).join(' ');
+};
+
+Deno.test('a time window includes its start and excludes its end', () => {
+    const flow = nightFlow('00:00', '08:00');
+
+    const shown = shownAt(flow, [at(23, 59), at(0, 0), at(7, 59), at(8, 0)]);
+
+    assertSame(shown, 'entity nothing nothing entity', 'off from midnight until eight');
+});
+
+Deno.test('a time window that ends before it starts runs past midnight', () => {
+    const flow = nightFlow('22:00', '07:00');
+
+    const shown = shownAt(flow, [at(21, 59), at(22, 0), at(3, 0), at(6, 59), at(7, 0), at(12, 0)]);
+
+    assertSame(shown, 'entity nothing nothing nothing entity entity', 'the night, across the date');
+});

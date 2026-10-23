@@ -67,6 +67,13 @@ bottom, first match wins:
 That is the default flow, and it is exactly what used to be written in code. A
 rule with **no conditions always matches**, which is how the last block works.
 
+A condition either tests an entity (playing, has a reading, above, below,
+state equals) or is a **time window**: `{ "test": "timeBetween", "from":
+"22:00", "to": "07:00" }`, on this host's local clock. The start is included
+and the end is not, and a window whose end is earlier than its start runs past
+midnight — so that one is the night. A window has no `entityId`, and one that
+names one is refused.
+
 A sensor with no reading is left out of a rotation rather than taking its turn
 and showing nothing — and a rotation with *nothing* left declines to match at
 all, so the rules below it are tried. That is why a flow wants a conditionless
@@ -230,7 +237,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 79 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 83 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -293,6 +300,8 @@ Configuration:
   which is how a typo'd entity id looks. A built-in also cannot be a `bar` — a
   bar wants a number, and a clock would leave one permanently empty with nothing
   on the panel to say why — and its `kind` can only be `text`.
+- **A time window's `from` and `to` cannot be equal.** That could mean an empty
+  window or the whole day; a rule that should always apply has no conditions.
 - **The clock is the host's, so the panel is only as right as this machine.** A
   wrong timezone on the box running this is a wrong clock on the panel, and
   nothing in the editor can tell. The formats are written out rather than taken
@@ -422,7 +431,7 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 79 tests, no hardware and no Home Assistant:
+`deno task test` — 83 tests, no hardware and no Home Assistant:
 
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`
@@ -431,6 +440,9 @@ Home Assistant's compressed WebSocket format:
   rotation on the clock, unavailable sensors skipped, nothing at all
 - the flow evaluator itself: first match wins, `all` against `any`, a
   conditionless rule as the OTHERWISE block, a flow that matches nothing, a
+  time window including its start and excluding its end, one running past
+  midnight, the validator refusing a malformed time, an equal start and end
+  and a window tied to an entity, a
   rotation advancing on its dwell, **a rotation resuming on the entity it was on
   after an interruption**, one whose members have all dropped off falling
   through, and one losing a member mid-turn
