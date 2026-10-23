@@ -1,0 +1,20 @@
+{
+    "tasks": {
+        "start": "deno run --env-file=.env --allow-net --allow-env --allow-read=public,panel.config.json,panel.config.json.tmp --allow-write=panel.config.json,panel.config.json.tmp main.ts",
+        "dev": "HA_TOKEN= deno run --env-file=.env --allow-net --allow-env --allow-read=public,panel.config.json,panel.config.json.tmp --allow-write=panel.config.json,panel.config.json.tmp main.ts",
+        "entities": "deno run --env-file=.env --allow-net --allow-env scripts/listEntities.ts",
+        "test": "deno test --allow-net",
+        "check": "deno check main.ts server.ts scripts/listEntities.ts tests/",
+        "doctor": "deno run --env-file=.env --allow-net --allow-env scripts/doctor.ts"
+    },
+    "lint": {
+        "exclude": [
+            "public/"
+        ]
+    },
+    "fmt": {
+        "exclude": [
+            "public/"
+        ]
+    }
+}

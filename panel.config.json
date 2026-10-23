@@ -1,0 +1,214 @@
+{
+    "version": 1,
+    "output": {
+        "wledIp": "192.168.1.69",
+        "brightness": 80
+    },
+    "entities": [
+        {
+            "entityId": "builtin.time",
+            "kind": "text",
+            "format": "hour24",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "builtin.date",
+            "kind": "text",
+            "format": "dayMonthNumeric",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "media_player.living_room",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "media_player.bedroom_tv",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "sensor.kitchen_temperature",
+            "kind": "temperature",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "sensor.battery_level",
+            "kind": "percent",
+            "display": {
+                "style": "bar",
+                "segmentId": 0,
+                "color": [
+                    0,
+                    255,
+                    80
+                ],
+                "trackColor": [
+                    0,
+                    20,
+                    40
+                ]
+            }
+        },
+        {
+            "entityId": "weather.forecast_home",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "sensor.p2s_current_layer",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "sensor.p2s_total_layer_count",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70
+            }
+        },
+        {
+            "entityId": "sensor.total_dc_power",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 70,
+                "prefix": "PV "
+            }
+        }
+    ],
+    "flow": [
+        {
+            "id": "television",
+            "label": "the television is playing",
+            "match": "all",
+            "conditions": [
+                {
+                    "entityId": "media_player.bedroom_tv",
+                    "test": "isPlaying"
+                }
+            ],
+            "action": {
+                "do": "blank"
+            }
+        },
+        {
+            "id": "music",
+            "label": "music is playing",
+            "match": "all",
+            "conditions": [
+                {
+                    "entityId": "media_player.living_room",
+                    "test": "isPlaying"
+                }
+            ],
+            "action": {
+                "do": "show",
+                "entityId": "media_player.living_room"
+            }
+        },
+        {
+            "id": "sensors",
+            "label": "the sensors take turns",
+            "match": "all",
+            "conditions": [],
+            "action": {
+                "do": "loop",
+                "entityIds": [
+                    "builtin.time",
+                    "weather.forecast_home",
+                    "sensor.kitchen_temperature",
+                    "sensor.battery_level",
+                    "builtin.date",
+                    "sensor.total_dc_power"
+                ],
+                "dwellSeconds": 5
+            }
+        },
+        {
+            "id": "idle",
+            "label": "nothing is playing and no sensor has a reading",
+            "match": "all",
+            "conditions": [],
+            "action": {
+                "do": "blank"
+            }
+        }
+    ]
+}

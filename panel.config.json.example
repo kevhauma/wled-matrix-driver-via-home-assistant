@@ -1,0 +1,153 @@
+{
+    "version": 1,
+    "output": {
+        "wledIp": "",
+        "brightness": 80
+    },
+    "entities": [
+        {
+            "entityId": "media_player.living_room_2_0",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 80
+            }
+        },
+        {
+            "entityId": "media_player.bedroom_tv",
+            "kind": "text",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    255,
+                    255
+                ],
+                "speed": 80
+            }
+        },
+        {
+            "entityId": "sensor.kitchen_temperature",
+            "kind": "temperature",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    255,
+                    160,
+                    0
+                ],
+                "speed": 60
+            }
+        },
+        {
+            "entityId": "sensor.battery_level",
+            "kind": "percent",
+            "display": {
+                "style": "bar",
+                "segmentId": 0,
+                "color": [
+                    0,
+                    255,
+                    80
+                ],
+                "trackColor": [
+                    0,
+                    20,
+                    40
+                ]
+            }
+        },
+        {
+            "entityId": "builtin.time",
+            "kind": "text",
+            "format": "hour24",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    110,
+                    175,
+                    255
+                ],
+                "speed": 60
+            }
+        },
+        {
+            "entityId": "builtin.date",
+            "kind": "text",
+            "format": "weekdayDayMonth",
+            "display": {
+                "style": "text",
+                "segmentId": 0,
+                "color": [
+                    110,
+                    175,
+                    255
+                ],
+                "speed": 60
+            }
+        }
+    ],
+    "flow": [
+        {
+            "id": "television",
+            "label": "the television is playing",
+            "match": "all",
+            "conditions": [
+                {
+                    "entityId": "media_player.bedroom_tv",
+                    "test": "isPlaying"
+                }
+            ],
+            "action": {
+                "do": "blank"
+            }
+        },
+        {
+            "id": "music",
+            "label": "music is playing",
+            "match": "all",
+            "conditions": [
+                {
+                    "entityId": "media_player.living_room_2_0",
+                    "test": "isPlaying"
+                }
+            ],
+            "action": {
+                "do": "show",
+                "entityId": "media_player.living_room_2_0"
+            }
+        },
+        {
+            "id": "sensors",
+            "label": "the sensors take turns",
+            "match": "all",
+            "conditions": [],
+            "action": {
+                "do": "loop",
+                "entityIds": [
+                    "sensor.kitchen_temperature",
+                    "sensor.battery_level"
+                ],
+                "dwellSeconds": 5
+            }
+        },
+        {
+            "id": "idle",
+            "label": "nothing is playing and no sensor has a reading",
+            "match": "all",
+            "conditions": [],
+            "action": {
+                "do": "blank"
+            }
+        }
+    ]
+}
