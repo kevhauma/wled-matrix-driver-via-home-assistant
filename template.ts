@@ -33,17 +33,55 @@ export const PLACEHOLDER_NAMES: readonly Placeholder[] = Object.values(Placehold
 
 export type PlaceholderValues = Record<Placeholder, string | number>;
 
-const PLACEHOLDER_PATTERN = /\{\{\s*([A-Za-z]+)\s*\}\}/g;
+/**
+ * Another entity's values, for `{{sensor.outside}}` and
+ * `{{sensor.outside:degrees}}`. An id the caller has no reading for gets the
+ * same empty values as a reading that has dropped off.
+ */
+export type EntityValues = (entityId: string) => PlaceholderValues;
+
+export const EMPTY_VALUES: PlaceholderValues = {
+    value: '',
+    percent: 0,
+    degrees: 0,
+    unit: '',
+    title: '',
+    artist: '',
+};
+
+/**
+ * `{{name}}` reads the display's own entity; `{{domain.object_id}}` reads
+ * another entity's `value`, and `{{domain.object_id:name}}` any of its
+ * values. The dot is what tells the two apart: no placeholder name has one,
+ * and every entity id does.
+ */
+const PLACEHOLDER_SOURCE = String.raw`\{\{\s*(?:([a-z0-9_]+\.[a-z0-9_]+)(?::([A-Za-z]+))?|([A-Za-z]+))\s*\}\}`;
+
+const PLACEHOLDER_PATTERN = new RegExp(PLACEHOLDER_SOURCE, 'g');
 
 /** The same pattern anchored, which is what decides a substitution's type. */
-const WHOLE_STRING_PATTERN = /^\{\{\s*([A-Za-z]+)\s*\}\}$/;
+const WHOLE_STRING_PATTERN = new RegExp(`^${PLACEHOLDER_SOURCE}$`);
 
 export const isPlaceholder = (name: string): name is Placeholder => {
     const found = PLACEHOLDER_NAMES.find(candidate => candidate === name);
     return found !== undefined;
 };
 
-export type PlaceholderUse = { path: string, name: string };
+export type PlaceholderUse = {
+    path: string,
+    name: string,
+    /** Absent for the display's own entity. */
+    entityId?: string,
+};
+
+/** One match of the pattern above, in its three possible shapes. */
+const toUse = (match: RegExpMatchArray, path: string): PlaceholderUse => {
+    const [, entityId, entityName, ownName] = match;
+    if (entityId === undefined) {
+        return { path, name: ownName };
+    }
+    return { path, name: entityName ?? Placeholders.Value, entityId };
+};
 
 /**
  * Every placeholder in a JSON value, with the path to it, so that a typo can
@@ -57,7 +95,10 @@ export type PlaceholderUse = { path: string, name: string };
 export const findPlaceholders = (value: unknown, path: string): PlaceholderUse[] => {
     if (typeof value === 'string') {
         const matches = [...value.matchAll(PLACEHOLDER_PATTERN)];
-        return matches.map(match => ({ path, name: match[1] }));
+        return matches.map(match => {
+            const use = toUse(match, path);
+            return use;
+        });
     }
 
     if (Array.isArray(value)) {
@@ -78,6 +119,19 @@ export const findPlaceholders = (value: unknown, path: string): PlaceholderUse[]
     return [];
 };
 
+/** What one placeholder stands for, or undefined for a name that does not exist. */
+const resolve = (
+    use: PlaceholderUse,
+    own: PlaceholderValues,
+    others: EntityValues,
+): string | number | undefined => {
+    if (!isPlaceholder(use.name)) {
+        return undefined;
+    }
+    const values = use.entityId === undefined ? own : others(use.entityId);
+    return values[use.name];
+};
+
 /**
  * A string that is *nothing but* one placeholder takes that value's own type.
  * That is what lets `"ix": "{{percent}}"` arrive at the device as the number
@@ -89,30 +143,45 @@ export const findPlaceholders = (value: unknown, path: string): PlaceholderUse[]
  * before here, but this has to be total: it also runs on a draft the editor is
  * still being typed into.
  */
-const fillString = (text: string, values: PlaceholderValues): string | number => {
-    const whole = WHOLE_STRING_PATTERN.exec(text);
-    if (whole !== null && isPlaceholder(whole[1])) {
-        return values[whole[1]];
+const fillString = (
+    text: string,
+    own: PlaceholderValues,
+    others: EntityValues,
+): string | number => {
+    const whole = text.match(WHOLE_STRING_PATTERN);
+    if (whole !== null) {
+        const use = toUse(whole, '');
+        const value = resolve(use, own, others);
+        if (value !== undefined) {
+            return value;
+        }
     }
 
-    return text.replace(PLACEHOLDER_PATTERN, (match, name: string) => {
-        if (!isPlaceholder(name)) {
-            return match;
-        }
-        const value = values[name];
-        return String(value);
+    return text.replace(PLACEHOLDER_PATTERN, (...match) => {
+        const use = toUse(match as unknown as RegExpMatchArray, '');
+        const value = resolve(use, own, others);
+        return value === undefined ? match[0] : String(value);
     });
 };
 
-export const fillTemplate = (value: unknown, values: PlaceholderValues): unknown => {
+/**
+ * `others` defaults to every other entity being empty, which is right for a
+ * caller that has only the one reading — and is why `wled.ts`, which has them
+ * all, always passes it.
+ */
+export const fillTemplate = (
+    value: unknown,
+    own: PlaceholderValues,
+    others: EntityValues = () => EMPTY_VALUES,
+): unknown => {
     if (typeof value === 'string') {
-        const filled = fillString(value, values);
+        const filled = fillString(value, own, others);
         return filled;
     }
 
     if (Array.isArray(value)) {
         return value.map(item => {
-            const filled = fillTemplate(item, values);
+            const filled = fillTemplate(item, own, others);
             return filled;
         });
     }
@@ -120,7 +189,7 @@ export const fillTemplate = (value: unknown, values: PlaceholderValues): unknown
     if (typeof value === 'object' && value !== null) {
         const entries = Object.entries(value);
         const filled = entries.map(([key, item]) => {
-            const next = fillTemplate(item, values);
+            const next = fillTemplate(item, own, others);
             return [key, next];
         });
         return Object.fromEntries(filled);

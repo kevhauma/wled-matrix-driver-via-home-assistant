@@ -192,6 +192,7 @@ export const startServer = (
                 unit,
                 sampleArtist,
                 brightness: draft.output.brightness,
+                liveReadings: new Map(Object.entries(bridge.snapshot().readings)),
             });
             return jsonResponse(preview);
         } catch (error) {

@@ -74,3 +74,33 @@ Deno.test('a placeholder in a key is neither found nor filled', () => {
     assertSame(uses.length, 0, 'keys are a fixed set, so this is a mistake not an intention');
     assertSame(filled['{{title}}'], 1, 'and the key is left alone');
 });
+
+const OUTSIDE: PlaceholderValues = { ...VALUES, value: '8C', degrees: 8 };
+
+const others = (entityId: string): PlaceholderValues =>
+    entityId === 'sensor.outside' ? OUTSIDE : { ...VALUES, value: '', degrees: 0 };
+
+Deno.test('a dotted name reads another entity: its value, or a named one after a colon', () => {
+    const filled = fillTemplate(
+        { n: 'in {{value}} out {{sensor.outside}}', ix: '{{sensor.outside:degrees}}' },
+        VALUES,
+        others,
+    ) as Record<string, unknown>;
+
+    assertSame(filled.n, 'in 18C out 8C', 'the bare id is that entity’s value');
+    assertSame(filled.ix, 8, 'and a whole-string reference keeps its type');
+});
+
+Deno.test('an entity reference is found with its id, and a bare one asks for value', () => {
+    const uses = findPlaceholders('{{sensor.outside}} {{sensor.outside:unit}}', 'text');
+
+    assertSame(uses[0].entityId, 'sensor.outside', 'the id');
+    assertSame(uses[0].name, 'value', 'value when no name is given');
+    assertSame(uses[1].name, 'unit', 'the named one otherwise');
+});
+
+Deno.test('with nothing to read other entities from, a reference fills empty', () => {
+    const filled = fillTemplate('out {{sensor.outside}}', VALUES);
+
+    assertSame(filled, 'out ', 'empty, as a dropped-off reading is');
+});

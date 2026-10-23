@@ -208,8 +208,11 @@ const checkPlaceholders = (value: unknown, path: string): void => {
         return;
     }
     const known = PLACEHOLDER_NAMES.join(', ');
+    const written = unknown.entityId === undefined
+        ? unknown.name
+        : `${unknown.entityId}:${unknown.name}`;
     throw new Error(
-        `${unknown.path} references an unknown placeholder '{{${unknown.name}}}'. `
+        `${unknown.path} references an unknown placeholder '{{${written}}}'. `
             + `Known: ${known}.`,
     );
 };
@@ -252,6 +255,37 @@ const parseCustomPayload = (value: unknown, path: string): Record<string, unknow
 
     checkPlaceholders(record, path);
     return record;
+};
+
+/** Where a display keeps its placeholders, if it has any. */
+const templateOf = (display: WledDisplay, path: string): { value: unknown, path: string } | undefined => {
+    if (display.style === 'text') {
+        return { value: display.text, path: `${path}.text` };
+    }
+    if (display.style === 'custom') {
+        return { value: display.payload, path: `${path}.payload` };
+    }
+    return undefined;
+};
+
+/**
+ * `{{sensor.outside}}` has to name one of the panel's entities. Only those are
+ * read, so any other id could never have a value — it would sit on the panel
+ * as an empty gap, exactly as a typo'd id would, which is what this catches.
+ */
+const checkReferences = (display: WledDisplay, path: string, entityIds: ReadonlySet<string>): void => {
+    const template = templateOf(display, path);
+    if (template === undefined) {
+        return;
+    }
+    const uses = findPlaceholders(template.value, template.path);
+    const stray = uses.find(use => use.entityId !== undefined && !entityIds.has(use.entityId));
+    if (stray !== undefined) {
+        throw new Error(
+            `${stray.path} references ${stray.entityId}, which is not one of the panel's entities. `
+                + 'Add it on the Entities tab first.',
+        );
+    }
 };
 
 const parseDisplay = (value: unknown, path: string): WledDisplay => {
@@ -452,6 +486,11 @@ export const parsePanelConfig = (value: unknown): PanelConfig => {
     const entities = rawEntities.map((entity, index) => {
         const parsed = parseEntity(entity, `config.entities[${index}]`);
         return parsed;
+    });
+
+    const entityIds = new Set(entities.map(entity => entity.entityId));
+    entities.forEach((entity, index) => {
+        checkReferences(entity.display, `config.entities[${index}].display`, entityIds);
     });
 
     const rawFlow = asArray(record.flow, 'config.flow');

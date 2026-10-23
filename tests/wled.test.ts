@@ -1,6 +1,6 @@
 import { EntityIds, PANEL_ENTITIES, PanelEntity } from '../entities.ts';
 import { Reading } from '../readings.ts';
-import { createWledTarget, toDisplayText, toWledPayload } from '../wled.ts';
+import { createWledTarget, toDisplayText, toEntityValues, toWledPayload } from '../wled.ts';
 import { Decision } from '../whatToShow.ts';
 
 const assertSame = (actual: unknown, expected: unknown, message: string): void => {
@@ -10,6 +10,8 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 const BRIGHTNESS = 96;
+
+const NO_OTHERS = toEntityValues(new Map());
 
 const buildPayload = (decision: Decision, readings: Record<string, Reading>) =>
     toWledPayload({
@@ -103,7 +105,7 @@ Deno.test('a shorter whole form is preferred over cutting the longer one', () =>
         kind: 'text',
         candidates: ['Superstitious Fantasy - Windwaker', 'Superstitious Fantasy'],
         isPlaying: true,
-    });
+    }, NO_OTHERS);
     assertSame(fitted, 'Superstitious Fantasy', 'dropped the artist rather than cutting it mid-word');
 });
 
@@ -114,7 +116,7 @@ Deno.test('text with no form that fits is cut to the segment name limit', () => 
         kind: 'text',
         candidates: ['A title that runs well past the thirty-two character segment name limit'],
         isPlaying: true,
-    });
+    }, NO_OTHERS);
     assertSame(long.length <= 32, true, `fits the limit, got ${long.length}`);
 });
 
@@ -125,7 +127,7 @@ Deno.test('non-ASCII is stripped, because the device fonts cannot draw it', () =
         kind: 'text',
         candidates: ['Björk • Army'],
         isPlaying: true,
-    });
+    }, NO_OTHERS);
     assertSame(accented, 'Bjrk  Army', 'non-ASCII dropped');
 });
 
@@ -271,7 +273,7 @@ const textDisplay = (text: string): PanelEntity['display'] =>
 Deno.test('a text template puts anything around the value, which is a suffix', () => {
     const power: Reading = { kind: 'text', candidates: ['1234'], isPlaying: false };
 
-    const drawn = toDisplayText(textDisplay('PV {{value}}W'), power);
+    const drawn = toDisplayText(textDisplay('PV {{value}}W'), power, NO_OTHERS);
 
     assertSame(drawn, 'PV 1234W', 'prefix and suffix around the value');
 });
@@ -283,13 +285,41 @@ Deno.test('a text template is fitted per form of the value, keeping its own text
         isPlaying: true,
     };
 
-    const drawn = toDisplayText(textDisplay('> {{value}} <'), song);
+    const drawn = toDisplayText(textDisplay('> {{value}} <'), song, NO_OTHERS);
 
     assertSame(drawn, '> Superstitious Fantasy <', 'dropped the artist, kept both ends');
 });
 
 Deno.test('a text template draws nothing for a reading that has dropped off', () => {
-    const drawn = toDisplayText(textDisplay('PV {{value}}W'), { kind: 'unavailable' });
+    const drawn = toDisplayText(textDisplay('PV {{value}}W'), { kind: 'unavailable' }, NO_OTHERS);
 
     assertSame(drawn, '', 'not the template around a gap');
+});
+
+Deno.test('one display can draw two entities, each read as the panel draws it', () => {
+    const inside: PanelEntity = {
+        entityId: 'sensor.inside',
+        kind: 'temperature',
+        display: textDisplay('in {{value}} out {{sensor.outside}}'),
+    };
+    const outside: PanelEntity = {
+        entityId: 'sensor.outside',
+        kind: 'temperature',
+        // Its own template is not used by the reference, or two could refer
+        // to each other.
+        display: textDisplay('OUT {{value}}'),
+    };
+    const readings = new Map<string, Reading>([
+        ['sensor.inside', { kind: 'temperature', degrees: 21.2, unit: 'C' }],
+        ['sensor.outside', { kind: 'temperature', degrees: 7.6, unit: 'C' }],
+    ]);
+
+    const payload = toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.inside' },
+        entities: [inside, outside],
+        readings,
+        brightness: BRIGHTNESS,
+    });
+
+    assertSame(firstSegment(payload).n, 'in 21C out 8C', 'both, rounded, with their units');
 });

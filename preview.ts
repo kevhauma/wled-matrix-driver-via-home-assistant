@@ -6,6 +6,7 @@ import {
     MAX_TEXT_LENGTH,
     segmentIdsOf,
     toDisplayText,
+    toEntityValues,
     toTextOptions,
     toWledPayload,
     visibleLetters,
@@ -130,10 +131,18 @@ export type PreviewInput = {
     /** Only a media player has one, and only then is it asked for. */
     sampleArtist: string,
     brightness: number,
+    /**
+     * What the running service last read for every entity. The one being
+     * previewed is replaced by the sample; the rest are what a placeholder
+     * naming another entity, like `{{sensor.outside}}`, fills from — there is
+     * one sample field, and faking the others would preview a panel that never
+     * existed.
+     */
+    liveReadings: ReadonlyMap<string, Reading>,
 };
 
 export const toPreview = (
-    { entities, entityId, sampleValue, unit, sampleArtist, brightness }: PreviewInput,
+    { entities, entityId, sampleValue, unit, sampleArtist, brightness, liveReadings }: PreviewInput,
 ): Preview => {
     const entity = entities.find(candidate => candidate.entityId === entityId);
     if (entity === undefined) {
@@ -143,7 +152,10 @@ export const toPreview = (
     const isBuiltin = isBuiltinId(entityId);
     const sample = { value: sampleValue, unit, artist: sampleArtist };
     const reading = previewReading(entity, sample);
-    const text = toDisplayText(entity.display, reading);
+    const readings = new Map(liveReadings);
+    readings.set(entityId, reading);
+    const others = toEntityValues(readings);
+    const text = toDisplayText(entity.display, reading, others);
 
     /**
      * The whole payload, not just this entity's segment: `toWledPayload` adds
@@ -151,7 +163,6 @@ export const toPreview = (
      * are part of what gets sent.
      */
     const decision = { show: 'entity' as const, entityId };
-    const readings = new Map<string, Reading>([[entityId, reading]]);
     const payload = toWledPayload({ decision, entities, readings, brightness });
 
     const visible = visibleLetters(PANEL_COLUMNS);
@@ -198,7 +209,7 @@ export const toPreview = (
          * out as `18C`, and calling that a shortening would cry wolf on every
          * numeric reading.
          */
-        const options = toTextOptions(entity.display, reading);
+        const options = toTextOptions(entity.display, reading, others);
         const longest = options[0] ?? '';
         if (text !== longest) {
             warnings.push('shortened');

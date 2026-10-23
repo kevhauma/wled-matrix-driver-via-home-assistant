@@ -1,6 +1,6 @@
 import { PanelEntity, RGBColor, WledDisplay } from './entities.ts';
-import { Reading } from './readings.ts';
-import { fillTemplate, PlaceholderValues } from './template.ts';
+import { Reading, UNAVAILABLE } from './readings.ts';
+import { EntityValues, fillTemplate, PlaceholderValues } from './template.ts';
 import { Decision } from './whatToShow.ts';
 
 /**
@@ -141,12 +141,16 @@ type TextDisplay = Extract<WledDisplay, { style: 'text' }>;
  * Empty when the reading has no forms at all — a sensor that has dropped off
  * draws nothing rather than its template's literal text around a gap.
  */
-export const toTextOptions = (display: TextDisplay, reading: Reading): string[] => {
-    const others = toReadingValues(reading);
+export const toTextOptions = (
+    display: TextDisplay,
+    reading: Reading,
+    others: EntityValues,
+): string[] => {
+    const rest = toReadingValues(reading);
     const candidates = toCandidates(reading);
     return candidates.map(candidate => {
-        const values = { ...others, value: toAscii(candidate) };
-        const filled = fillTemplate(display.text, values);
+        const values = { ...rest, value: toAscii(candidate) };
+        const filled = fillTemplate(display.text, values, others);
         return toAscii(String(filled));
     });
 };
@@ -156,11 +160,15 @@ export const toTextOptions = (display: TextDisplay, reading: Reading): string[] 
  * filled and fitted — or, for the other styles, the reading on its own, which
  * is what a custom body's `{{value}}` means.
  */
-export const toDisplayText = (display: WledDisplay, reading: Reading): string => {
+export const toDisplayText = (
+    display: WledDisplay,
+    reading: Reading,
+    others: EntityValues,
+): string => {
     if (display.style !== 'text') {
         return toPlainText(reading);
     }
-    const options = toTextOptions(display, reading);
+    const options = toTextOptions(display, reading, others);
     return fitText(options);
 };
 
@@ -191,11 +199,23 @@ export const segmentIdsOf = (display: WledDisplay): number[] => {
 /** What each `{{...}}` in a custom body stands for, for this reading. */
 const toPlaceholderValues = (reading: Reading): PlaceholderValues => {
     const value = toPlainText(reading);
-    const others = toReadingValues(reading);
-    return { ...others, value };
+    const rest = toReadingValues(reading);
+    return { ...rest, value };
 };
 
-const toSegment = (display: DrawnDisplay, reading: Reading): WledPayload => {
+/**
+ * Every other entity's values, for `{{sensor.outside}}`. Its `value` is the
+ * plain reading, never that entity's own text template: one template reading
+ * another would let two of them refer to each other.
+ */
+export const toEntityValues = (readings: ReadonlyMap<string, Reading>): EntityValues =>
+    entityId => {
+        const reading = readings.get(entityId) ?? UNAVAILABLE;
+        const values = toPlaceholderValues(reading);
+        return values;
+    };
+
+const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues): WledPayload => {
     const base = { id: display.segmentId, on: true, frz: false, pal: 0 };
 
     if (display.style === 'bar') {
@@ -216,7 +236,7 @@ const toSegment = (display: DrawnDisplay, reading: Reading): WledPayload => {
         };
     }
 
-    const text = toDisplayText(display, reading);
+    const text = toDisplayText(display, reading, others);
     return {
         ...base,
         fx: SCROLLING_TEXT_EFFECT_ID,
@@ -248,8 +268,9 @@ export const toWledPayload = (
         throw new Error(`whatToShow picked ${decision.entityId}, which is not a registered entity.`);
     }
 
-    const reading = readings.get(entity.entityId) ?? { kind: 'unavailable' };
+    const reading = readings.get(entity.entityId) ?? UNAVAILABLE;
     const display = entity.display;
+    const otherValues = toEntityValues(readings);
 
     /**
      * Every other segment any entity uses is switched off. An empty segment
@@ -272,7 +293,7 @@ export const toWledPayload = (
 
     if (display.style === 'custom') {
         const values = toPlaceholderValues(reading);
-        const filled = fillTemplate(display.payload, values) as WledPayload;
+        const filled = fillTemplate(display.payload, values, otherValues) as WledPayload;
         const own = Array.isArray(filled.seg) ? filled.seg : [];
         /**
          * `on` and `bri` are defaults rather than overrides, so the editor's
@@ -282,7 +303,7 @@ export const toWledPayload = (
         return { on: true, bri: brightness, ...filled, seg: [...own, ...others] };
     }
 
-    const segment = toSegment(display, reading);
+    const segment = toSegment(display, reading, otherValues);
     return { on: true, bri: brightness, seg: [segment, ...others] };
 };
 

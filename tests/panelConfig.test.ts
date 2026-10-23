@@ -250,3 +250,32 @@ Deno.test('a text template refuses an unknown placeholder and an empty string', 
     assertSame(typo.includes('display.text'), true, `the typo names the field: ${typo}`);
     assertSame(empty.includes('non-empty'), true, `empty is refused: ${empty}`);
 });
+
+Deno.test('a reference to another entity must name one of the panel’s, with a real name', () => {
+    const config = (text: string): unknown => ({
+        version: 2,
+        output: { wledIp: '', brightness: 80 },
+        entities: [
+            { entityId: 'sensor.inside', kind: 'temperature', display: { ...TEXT_DISPLAY, text } },
+            { entityId: 'sensor.outside', kind: 'temperature', display: TEXT_DISPLAY },
+        ],
+        flow: [],
+    });
+    const refused = (text: string): string => {
+        try {
+            parsePanelConfig(config(text));
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+        throw new Error(`${text} was accepted, and should not have been`);
+    };
+
+    const accepted = parsePanelConfig(config('{{value}} / {{sensor.outside:degrees}}'));
+    const missing = refused('{{value}} / {{sensor.outdoor}}');
+    const typo = refused('{{value}} / {{sensor.outside:degree}}');
+
+    assertSame(accepted.entities.length, 2, 'a registered entity is fine');
+    assertSame(missing.includes('sensor.outdoor, which is not one of'), true, `unregistered: ${missing}`);
+    assertSame(missing.includes('entities[0].display.text'), true, `and says where: ${missing}`);
+    assertSame(typo.includes("'{{sensor.outside:degree}}'"), true, `an unknown name after the colon: ${typo}`);
+});

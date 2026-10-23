@@ -35,6 +35,8 @@ const PLACEHOLDER_HELP = [
     ['{{unit}}', 'the entity’s unit, e.g. C'],
     ['{{title}}', 'a media player’s title on its own'],
     ['{{artist}}', 'a media player’s artist on its own'],
+    ['{{sensor.x}}', 'another of the panel’s entities, as the panel draws it'],
+    ['{{sensor.x:degrees}}', 'any of the above, read from that entity instead'],
 ];
 
 const placeholderHelp = () => make('div', { class: 'tokens' }, PLACEHOLDER_HELP.map(

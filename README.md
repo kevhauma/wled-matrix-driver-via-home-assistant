@@ -184,6 +184,14 @@ go wrong on a device you cannot read a stack trace from:
 | `{{unit}}` | the entity's `unit_of_measurement` |
 | `{{title}}` | a media player's title alone, so it can have a segment of its own |
 | `{{artist}}` | and its artist |
+| `{{sensor.outside}}` | another of the panel's entities, as `{{value}}` would draw it |
+| `{{sensor.outside:degrees}}` | any of the names above, read from that entity instead |
+
+The dotted form is how **one display draws two entities**: `"in {{value}} out
+{{sensor.outside_temperature}}"` on the inside sensor's text display, or a
+custom body giving each its own segment. The id has to be one of the panel's
+entities — only those are read — so add the other one on the Entities tab
+first; it does not have to be in the flow.
 
 A string that is **nothing but one placeholder takes that value's own type**, so
 `"ix": "{{percent}}"` arrives as the number WLED needs. Anywhere else it is
@@ -246,7 +254,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 90 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 95 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -327,6 +335,13 @@ Configuration:
   empty `entity_ids` is not how you ask Home Assistant for nothing — it reads a
   missing or empty filter as *every* entity. The empty snapshot is still
   emitted, because that is what tells the bridge it may start deciding.
+- **`{{sensor.outside}}` is that entity's plain reading, never its own text
+  template.** Otherwise two templates could name each other. It is also not
+  fitted with the display's `{{value}}`, so a long media title named this way
+  is cut at 32 characters rather than losing its artist first.
+- **Removing an entity another display names is refused on save**, with the
+  path to the placeholder — the Entities tab only checks the flow before
+  removing.
 - **A placeholder a reading cannot supply is empty or zero, not an error.** The
   same body may be in front of a sensor that has dropped off, and `{{percent}}`
   on a media player is `0` — the same thing a `bar` display draws. Nothing warns
@@ -377,6 +392,10 @@ WLED:
   custom body there is **no mock-up at all**, deliberately: it can draw one
   scrolling string or one bar across the whole panel, and a custom body is
   neither. It lists the filled segment names and the finished JSON instead.
+- **The preview fakes one entity, not the others it names.** There is one
+  sample field; `{{sensor.outside}}` fills from what the running service last
+  read for that entity, so it is empty on the mock source for an id the mock
+  does not have.
 - **The preview fakes the entity, so what it can fake matters.** The sample
   value becomes `media_title` for a `media_player.` entity and nothing else —
   that prefix test is the only reason `{{title}}` and `{{artist}}` preview at
@@ -445,7 +464,7 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 90 tests, no hardware and no Home Assistant:
+`deno task test` — 95 tests, no hardware and no Home Assistant:
 
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`
@@ -464,6 +483,10 @@ Home Assistant's compressed WebSocket format:
   the value so the artist is dropped before either end is, and a dropped-off
   reading drawing nothing; the validator refusing an empty one and a typo'd
   placeholder in one
+- placeholders naming another entity: its value by default and any name after a
+  colon, a whole-string reference keeping its type, an absent one filling
+  empty, one display drawing two temperatures, and the validator refusing an
+  id that is not on the panel and a typo'd name after the colon
 - an old file: version 1 upgraded and then passing the current validator, a
   `prefix` becoming the text in front of `{{value}}`, and a current file passed
   through untouched
