@@ -184,6 +184,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
             entities: panel.entities,
             flowDisplays: displaysInFlow(panel.flow),
             readings,
+            states,
             brightness: panel.output.brightness,
         });
         lastPayload = payload;

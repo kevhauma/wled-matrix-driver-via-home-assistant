@@ -121,6 +121,7 @@ Deno.test('a clock reaches the device as an ordinary text segment', () => {
         decision: { show: 'entity', entityId: BuiltinIds.Time },
         entities: [clock],
         flowDisplays: [],
+        states: new Map(),
         readings,
         brightness: 80,
     });

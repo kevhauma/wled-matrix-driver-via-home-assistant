@@ -1,6 +1,6 @@
-import { EntityIds, PANEL_ENTITIES, PanelEntity } from '../entities.ts';
+import { EntityIds, PANEL_ENTITIES, PanelEntity, PlainDisplay } from '../entities.ts';
 import { Reading } from '../readings.ts';
-import { createWledTarget, toDisplayText, toEntityValues, toWledPayload } from '../wled.ts';
+import { createWledTarget, resolveDisplay, toDisplayText, toEntityValues, toWledPayload } from '../wled.ts';
 import { Decision } from '../whatToShow.ts';
 
 const assertSame = (actual: unknown, expected: unknown, message: string): void => {
@@ -18,6 +18,7 @@ const buildPayload = (decision: Decision, readings: Record<string, Reading>) =>
         decision,
         entities: PANEL_ENTITIES,
         flowDisplays: [],
+        states: new Map(),
         readings: new Map(Object.entries(readings)),
         brightness: BRIGHTNESS,
     });
@@ -90,6 +91,7 @@ Deno.test('segments other than the one being shown are switched off', () => {
         decision: { show: 'entity', entityId: EntityIds.Battery },
         entities,
         flowDisplays: [],
+        states: new Map(),
         readings: new Map([[EntityIds.Battery, { kind: 'percent', percent: 10 } as Reading]]),
         brightness: BRIGHTNESS,
     });
@@ -103,7 +105,7 @@ Deno.test('segments other than the one being shown are switched off', () => {
 Deno.test('a shorter whole form is preferred over cutting the longer one', () => {
     const entity = PANEL_ENTITIES[0];
 
-    const fitted = toDisplayText(entity.display, {
+    const fitted = toDisplayText(resolveDisplay(entity.display, ''), {
         kind: 'text',
         candidates: ['Superstitious Fantasy - Windwaker', 'Superstitious Fantasy'],
         isPlaying: true,
@@ -114,7 +116,7 @@ Deno.test('a shorter whole form is preferred over cutting the longer one', () =>
 Deno.test('text with no form that fits is cut to the segment name limit', () => {
     const entity = PANEL_ENTITIES[0];
 
-    const long = toDisplayText(entity.display, {
+    const long = toDisplayText(resolveDisplay(entity.display, ''), {
         kind: 'text',
         candidates: ['A title that runs well past the thirty-two character segment name limit'],
         isPlaying: true,
@@ -125,7 +127,7 @@ Deno.test('text with no form that fits is cut to the segment name limit', () => 
 Deno.test('non-ASCII is stripped, because the device fonts cannot draw it', () => {
     const entity = PANEL_ENTITIES[0];
 
-    const accented = toDisplayText(entity.display, {
+    const accented = toDisplayText(resolveDisplay(entity.display, ''), {
         kind: 'text',
         candidates: ['Björk • Army'],
         isPlaying: true,
@@ -162,6 +164,7 @@ const buildCustomPayload = (reading: Reading, entities?: PanelEntity[]) =>
         decision: { show: 'entity', entityId: CUSTOM_ENTITY.entityId },
         entities: entities ?? [CUSTOM_ENTITY],
         flowDisplays: [],
+        states: new Map(),
         readings: new Map([[CUSTOM_ENTITY.entityId, reading]]),
         brightness: BRIGHTNESS,
     });
@@ -200,6 +203,7 @@ Deno.test('a custom body that sets bri keeps it', () => {
         decision: { show: 'entity', entityId: entity.entityId },
         entities: [entity],
         flowDisplays: [],
+        states: new Map(),
         readings: new Map([[entity.entityId, { kind: 'percent', percent: 5 } as Reading]]),
         brightness: BRIGHTNESS,
     });
@@ -271,7 +275,7 @@ Deno.test('an unchanged payload is not sent twice', () => {
     return run();
 });
 
-const textDisplay = (text: string): PanelEntity['display'] =>
+const textDisplay = (text: string): PlainDisplay =>
     ({ style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text });
 
 Deno.test('a text template puts anything around the value, which is a suffix', () => {
@@ -322,6 +326,7 @@ Deno.test('one display can draw two entities, each read as the panel draws it', 
         decision: { show: 'entity', entityId: 'sensor.inside' },
         entities: [inside, outside],
         flowDisplays: [],
+        states: new Map(),
         readings,
         brightness: BRIGHTNESS,
     });
@@ -344,6 +349,7 @@ Deno.test('a display set in the flow replaces the entity’s own, and its segmen
         decision: { show: 'entity', entityId: 'sensor.temperature', display: override },
         entities: [temperature],
         flowDisplays: [override],
+        states: new Map(),
         readings,
         brightness: BRIGHTNESS,
     });
@@ -351,6 +357,7 @@ Deno.test('a display set in the flow replaces the entity’s own, and its segmen
         decision: { show: 'entity', entityId: 'sensor.temperature' },
         entities: [temperature],
         flowDisplays: [override],
+        states: new Map(),
         readings,
         brightness: BRIGHTNESS,
     });
@@ -361,4 +368,51 @@ Deno.test('a display set in the flow replaces the entity’s own, and its segmen
     assertSame(overriddenSegments[0].id, 2, 'on its segment');
     assertSame(overriddenSegments[1].id === 0 && overriddenSegments[1].on, false, 'the entity’s own segment off');
     assertSame(ownSegments[1].id === 2 && ownSegments[1].on, false, 'and the override’s, when it is not drawn');
+});
+
+const SUN_ICON = {
+    style: 'custom' as const,
+    payload: {
+        seg: [
+            { id: 1, fx: 0, i: [0, 64, '000000', 18, 22, 'FFC800'] },
+            { id: 2, fx: 122, n: '{{value}}', ix: 128, c2: 0 },
+        ],
+    },
+};
+
+const weather: PanelEntity = {
+    entityId: 'weather.home',
+    kind: 'text',
+    display: {
+        style: 'byState',
+        cases: [{ states: ['sunny', 'clear-night'], display: SUN_ICON }],
+        otherwise: textDisplay('{{value}}'),
+    },
+};
+
+const weatherPayload = (state: string) =>
+    toWledPayload({
+        decision: { show: 'entity', entityId: 'weather.home' },
+        entities: [weather],
+        flowDisplays: [],
+        readings: new Map([['weather.home', { kind: 'text', candidates: [state], isPlaying: false } as Reading]]),
+        states: new Map([['weather.home', state]]),
+        brightness: BRIGHTNESS,
+    });
+
+Deno.test('a display chosen by state draws the case listing the state, as its custom body', () => {
+    const segments = weatherPayload('clear-night').seg as Segment[];
+
+    assertSame(segments[0].id, 1, 'the icon segment');
+    assertSame(JSON.stringify(segments[0].i), JSON.stringify([0, 64, '000000', 18, 22, 'FFC800']), 'its pixels');
+    assertSame(segments[1].n, 'clear-night', 'and the state beside it');
+    assertSame(segments.some(segment => segment.id === 0 && segment.on === true), false, 'not the text case');
+});
+
+Deno.test('a state no case lists draws otherwise, and the other case’s segments go off', () => {
+    const segments = weatherPayload('rainy').seg as Segment[];
+
+    assertSame(segments[0].id === 0 && segments[0].n, 'rainy', 'the otherwise text on segment 0');
+    const off = segments.filter(segment => segment.on === false).map(segment => segment.id);
+    assertSame(off.join(' '), '1 2', 'the icon case’s segments switched off, so nothing lingers');
 });

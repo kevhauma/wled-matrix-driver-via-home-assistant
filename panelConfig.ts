@@ -1,6 +1,14 @@
 import { BuiltinId, formatsFor, isBuiltinId } from './builtins.ts';
 import { Config } from './config.ts';
-import { EntityIds, PANEL_ENTITIES, PanelEntity, RGBColor, WledDisplay } from './entities.ts';
+import {
+    EntityIds,
+    PANEL_ENTITIES,
+    PanelEntity,
+    PlainDisplay,
+    RGBColor,
+    StateCase,
+    WledDisplay,
+} from './entities.ts';
 import { Action, Condition, FlowRule, LoopMember } from './flow.ts';
 import { findPlaceholders, isPlaceholder, PLACEHOLDER_NAMES } from './template.ts';
 
@@ -261,7 +269,22 @@ const parseCustomPayload = (value: unknown, path: string): Record<string, unknow
 };
 
 /** Where a display keeps its placeholders, if it has any. */
-const templateOf = (display: WledDisplay, path: string): { value: unknown, path: string } | undefined => {
+/** A display's plain parts with the path to each: itself, or a `byState` one's cases. */
+const plainDisplaysOf = (
+    display: WledDisplay,
+    path: string,
+): { display: PlainDisplay, path: string }[] => {
+    if (display.style !== 'byState') {
+        return [{ display, path }];
+    }
+    const cases = display.cases.map((candidate, index) => ({
+        display: candidate.display,
+        path: `${path}.cases[${index}].display`,
+    }));
+    return [...cases, { display: display.otherwise, path: `${path}.otherwise` }];
+};
+
+const templateOf = (display: PlainDisplay, path: string): { value: unknown, path: string } | undefined => {
     if (display.style === 'text') {
         return { value: display.text, path: `${path}.text` };
     }
@@ -277,22 +300,88 @@ const templateOf = (display: WledDisplay, path: string): { value: unknown, path:
  * as an empty gap, exactly as a typo'd id would, which is what this catches.
  */
 const checkReferences = (display: WledDisplay, path: string, entityIds: ReadonlySet<string>): void => {
-    const template = templateOf(display, path);
-    if (template === undefined) {
-        return;
+    for (const plain of plainDisplaysOf(display, path)) {
+        const template = templateOf(plain.display, plain.path);
+        if (template === undefined) {
+            continue;
+        }
+        const uses = findPlaceholders(template.value, template.path);
+        const stray = uses.find(use => use.entityId !== undefined && !entityIds.has(use.entityId));
+        if (stray !== undefined) {
+            throw new Error(
+                `${stray.path} references ${stray.entityId}, which is not one of the panel's entities. `
+                    + 'Add it on the Entities tab first.',
+            );
+        }
     }
-    const uses = findPlaceholders(template.value, template.path);
-    const stray = uses.find(use => use.entityId !== undefined && !entityIds.has(use.entityId));
-    if (stray !== undefined) {
-        throw new Error(
-            `${stray.path} references ${stray.entityId}, which is not one of the panel's entities. `
-                + 'Add it on the Entities tab first.',
-        );
+};
+
+/**
+ * A state is compared exactly, so `'sunny '` would never match anything —
+ * refused rather than trimmed, because a file that says one thing and does
+ * another is the bug this validator exists to prevent.
+ */
+const asState = (value: unknown, path: string): string => {
+    const state = asNonEmptyString(value, path);
+    if (state.trim() !== state) {
+        throw fail(path, 'a state without leading or trailing spaces', value);
     }
+    return state;
+};
+
+/**
+ * A state listed by two cases is refused: only the first could ever be drawn,
+ * so the second is a mistake that would otherwise look like it worked.
+ */
+const parseCases = (value: unknown, path: string): StateCase[] => {
+    const rawCases = asArray(value, path);
+    const firstCaseFor = new Map<string, number>();
+
+    return rawCases.map((item, index) => {
+        const casePath = `${path}[${index}]`;
+        const fields = asRecord(item, casePath);
+        const rawStates = asArray(fields.states, `${casePath}.states`);
+        if (rawStates.length === 0) {
+            throw fail(`${casePath}.states`, 'at least one state', fields.states);
+        }
+        const states = rawStates.map((state, position) => {
+            const parsed = asState(state, `${casePath}.states[${position}]`);
+            return parsed;
+        });
+
+        for (const state of states) {
+            const earlier = firstCaseFor.get(state);
+            if (earlier !== undefined) {
+                throw new Error(
+                    `${casePath}.states lists '${state}', which ${path}[${earlier}] already draws.`,
+                );
+            }
+            firstCaseFor.set(state, index);
+        }
+
+        const display = parsePlainDisplay(fields.display, `${casePath}.display`);
+        return { states, display };
+    });
 };
 
 const parseDisplay = (value: unknown, path: string): WledDisplay => {
     const record = asRecord(value, path);
+    if (record.style !== 'byState') {
+        const plain = parsePlainDisplay(record, path);
+        return plain;
+    }
+
+    const cases = parseCases(record.cases, `${path}.cases`);
+    const otherwise = parsePlainDisplay(record.otherwise, `${path}.otherwise`);
+    return { style: 'byState', cases, otherwise };
+};
+
+const parsePlainDisplay = (value: unknown, path: string): PlainDisplay => {
+    const record = asRecord(value, path);
+    // Named, because the generic complaint would not say why it is refused.
+    if (record.style === 'byState') {
+        throw fail(`${path}.style`, 'text, bar or custom — a case cannot itself depend on the state', record.style);
+    }
     const style = asOneOf(record.style, `${path}.style`, ['text', 'bar', 'custom'] as const);
 
     // Checked before `segmentId` and `color`, which a custom display does not
@@ -329,8 +418,13 @@ const READING_KINDS = ['percent', 'temperature', 'text'] as const;
  * validator is also what a hand-edited file goes through.
  */
 const refuseBarOnBuiltin = (entityId: string, display: WledDisplay, path: string): void => {
-    if (isBuiltinId(entityId) && display.style === 'bar') {
-        throw fail(`${path}.style`, `'text' or 'custom' for ${entityId}`, 'bar');
+    if (!isBuiltinId(entityId)) {
+        return;
+    }
+    for (const plain of plainDisplaysOf(display, path)) {
+        if (plain.display.style === 'bar') {
+            throw fail(`${plain.path}.style`, `'text' or 'custom' for ${entityId}`, 'bar');
+        }
     }
 };
 

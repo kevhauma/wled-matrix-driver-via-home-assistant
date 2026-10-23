@@ -328,3 +328,52 @@ Deno.test('a loop refuses two members with one id, which would share a position'
 
     assertSame(message.includes('two members with the same id'), true, message);
 });
+
+const byState = (cases: unknown, otherwise: unknown = TEXT_DISPLAY) => ({ style: 'byState', cases, otherwise });
+
+Deno.test('a display chosen by state survives validation', () => {
+    const parsed = parsePanelConfig(withEntity({
+        entityId: 'weather.home',
+        kind: 'text',
+        display: byState([{ states: ['sunny', 'clear-night'], display: TEXT_DISPLAY }]),
+    }));
+    const display = parsed.entities[0].display;
+
+    assertSame(display.style === 'byState' && display.cases[0].states.join(','), 'sunny,clear-night', 'kept');
+});
+
+Deno.test('a display chosen by state refuses a nested choice, a repeated state and a padded one', () => {
+    const nested = entityRefusal({
+        entityId: 'weather.home',
+        kind: 'text',
+        display: byState([{ states: ['sunny'], display: byState([]) }]),
+    });
+    const repeated = entityRefusal({
+        entityId: 'weather.home',
+        kind: 'text',
+        display: byState([
+            { states: ['sunny'], display: TEXT_DISPLAY },
+            { states: ['rainy', 'sunny'], display: TEXT_DISPLAY },
+        ]),
+    });
+    const padded = entityRefusal({
+        entityId: 'weather.home',
+        kind: 'text',
+        display: byState([{ states: ['sunny '], display: TEXT_DISPLAY }]),
+    });
+
+    assertSame(nested.includes('cannot itself depend on the state'), true, `nested: ${nested}`);
+    assertSame(repeated.includes("lists 'sunny', which"), true, `repeated: ${repeated}`);
+    assertSame(padded.includes('states[0]'), true, `padded: ${padded}`);
+});
+
+Deno.test('a built-in’s choice by state cannot hide a bar in a case', () => {
+    const message = entityRefusal({
+        entityId: 'builtin.time',
+        kind: 'text',
+        format: 'hour24',
+        display: byState([], { style: 'bar', segmentId: 0, color: [0, 1, 2], trackColor: [0, 1, 2] }),
+    });
+
+    assertSame(message.includes('display.otherwise.style'), true, message);
+});

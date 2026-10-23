@@ -1,4 +1,4 @@
-import { PanelEntity, RGBColor, WledDisplay } from './entities.ts';
+import { PanelEntity, PlainDisplay, RGBColor, WledDisplay } from './entities.ts';
 import { Reading, UNAVAILABLE } from './readings.ts';
 import { EntityValues, fillTemplate, PlaceholderValues } from './template.ts';
 import { Decision } from './whatToShow.ts';
@@ -129,8 +129,20 @@ const toReadingValues = (reading: Reading): Omit<PlaceholderValues, 'value'> => 
 };
 
 /** The two styles this file draws itself. `custom` writes its own body. */
-type DrawnDisplay = Exclude<WledDisplay, { style: 'custom' }>;
-type TextDisplay = Extract<WledDisplay, { style: 'text' }>;
+type DrawnDisplay = Exclude<PlainDisplay, { style: 'custom' }>;
+type TextDisplay = Extract<PlainDisplay, { style: 'text' }>;
+
+/**
+ * The display that applies for this raw state: a `byState` display's first
+ * case listing it, or its `otherwise`. Any other display is its own answer.
+ */
+export const resolveDisplay = (display: WledDisplay, state: string): PlainDisplay => {
+    if (display.style !== 'byState') {
+        return display;
+    }
+    const matched = display.cases.find(candidate => candidate.states.includes(state));
+    return matched?.display ?? display.otherwise;
+};
 
 /**
  * Every form a text display's template can take for this reading, longest
@@ -161,7 +173,7 @@ export const toTextOptions = (
  * is what a custom body's `{{value}}` means.
  */
 export const toDisplayText = (
-    display: WledDisplay,
+    display: PlainDisplay,
     reading: Reading,
     others: EntityValues,
 ): string => {
@@ -173,13 +185,18 @@ export const toDisplayText = (
 };
 
 /**
- * Every segment this display writes to, which a custom one can have several
- * of. Read from the stored template rather than from a filled payload, because
- * the service has to know which segments to leave alone before it has a
- * reading — that is why `panelConfig.ts` refuses a `seg` entry whose `id` is
- * anything but a literal number.
+ * Every segment this display can write to, which a custom one can have several
+ * of, and a `byState` one the union of its cases'. Read from the stored
+ * template rather than from a filled payload, because the service has to know
+ * which segments to leave alone before it has a reading — that is why
+ * `panelConfig.ts` refuses a `seg` entry whose `id` is anything but a literal
+ * number.
  */
 export const segmentIdsOf = (display: WledDisplay): number[] => {
+    if (display.style === 'byState') {
+        const nested = [...display.cases.map(candidate => candidate.display), display.otherwise];
+        return nested.flatMap(segmentIdsOf);
+    }
     if (display.style !== 'custom') {
         return [display.segmentId];
     }
@@ -259,11 +276,16 @@ export type PayloadInput = {
      */
     flowDisplays: readonly WledDisplay[],
     readings: ReadonlyMap<string, Reading>,
+    /**
+     * Raw Home Assistant state strings, which `Reading` throws away for
+     * numeric kinds. Only a `byState` display reads them.
+     */
+    states: ReadonlyMap<string, string>,
     brightness: number,
 };
 
 export const toWledPayload = (
-    { decision, entities, flowDisplays, readings, brightness }: PayloadInput,
+    { decision, entities, flowDisplays, readings, states, brightness }: PayloadInput,
 ): WledPayload => {
     if (decision.show === 'nothing') {
         return { on: false };
@@ -275,7 +297,8 @@ export const toWledPayload = (
     }
 
     const reading = readings.get(entity.entityId) ?? UNAVAILABLE;
-    const display = decision.display ?? entity.display;
+    const state = states.get(entity.entityId) ?? '';
+    const display = resolveDisplay(decision.display ?? entity.display, state);
     const otherValues = toEntityValues(readings);
 
     /**
@@ -286,6 +309,10 @@ export const toWledPayload = (
      * A custom display is not exempt. It owns the body, but it cannot know
      * which segments the *other* entities draw on, so these are appended to
      * whatever it asked for.
+     *
+     * `display` is already the case that matched, so a segment only another
+     * case of the same `byState` display uses is switched off too: an icon
+     * drawn for `sunny` does not linger under `rainy`'s text.
      */
     const allDisplays = [...entities.map(candidate => candidate.display), ...flowDisplays];
     const usedSegmentIds = new Set(allDisplays.flatMap(candidate => {

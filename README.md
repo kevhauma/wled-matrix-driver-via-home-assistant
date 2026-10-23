@@ -116,7 +116,8 @@ nothing needs editing here.
 `kind` picks the parse; `display.style` is intent (`'bar'` or `'text'`), not a
 WLED effect id — which effect that becomes and which slider carries what is
 `wled.ts`'s business. The third style, `'custom'`, is the way out of that
-abstraction when the two intents cannot say what you want; see below. Entities
+abstraction when the two intents cannot say what you want, and the fourth,
+`'byState'`, picks between displays on the entity's state; see below. Entities
 no longer carry a `role`: the order of the rules is the priority.
 
 A `text` display says what it draws with a `text` template: `"{{value}}"` on
@@ -129,6 +130,41 @@ nothing, not the template's own text around a gap.
 
 `PANEL_ENTITIES` in `entities.ts` is now only the **seed** for a fresh
 `panel.config.json`. Once that file exists, it is the registry.
+
+### A display chosen by state
+
+The fourth style, `'byState'`, is a choice between displays made on the
+entity's **raw state**, compared exactly: the first case listing the state is
+drawn, and `otherwise` when none does. Each case is an ordinary `text`, `bar`
+or `custom` display — a choice inside a choice is refused, because conditions
+belong in the flow. It works anywhere a display does: an entity's own, or one
+set in the flow.
+
+A **glyph** is a `custom` case. WLED's fonts are ASCII only, so a picture is
+per-pixel data in the segment's own `i` field — `[start, stop, colour]` fills a
+range, `[index, colour]` one pixel, and indices run row by row across the
+segment. A sun beside the condition, for `sunny` and `clear-night`:
+
+```json
+{
+    "style": "byState",
+    "cases": [{
+        "states": ["sunny", "clear-night"],
+        "display": { "style": "custom", "payload": { "seg": [
+            { "id": 1, "start": 0, "stop": 8, "startY": 0, "stopY": 8, "fx": 0, "on": true,
+              "i": [0, 64, "000000", 3, 5, "FFC800", 9, "FFC800", 14, "FFC800", 18, 22, "FFC800",
+                    24, "FFC800", 26, 30, "FFC800", 31, "FFC800", 32, "FFC800", 34, 38, "FFC800",
+                    39, "FFC800", 42, 46, "FFC800", 49, "FFC800", 54, "FFC800", 59, 61, "FFC800"] },
+            { "id": 2, "start": 8, "stop": 32, "startY": 0, "stopY": 8,
+              "fx": 122, "n": "{{value}}", "sx": 80, "ix": 128, "c2": 0 }
+        ] } }
+    }],
+    "otherwise": { "style": "text", "segmentId": 0, "color": [255, 255, 255], "speed": 70, "text": "{{value}}" }
+}
+```
+
+The icon and its text use **segments 1 and 2, not 0**, on purpose: see the
+segment geometry entry under "Things that bite".
 
 ### The built-in items
 
@@ -251,7 +287,8 @@ device and a Home Assistant instance on it.
   deciding is marked as you watch. "own view…" beside a `show` target or a loop
   member gives it a display of its own; "edit view" opens it, "reset" drops it.
 - **Display** — how one entity is drawn, with a mock-up of the panel, the exact
-  segment name, and the real `/json/state` body. A custom display swaps the
+  segment name, and the real `/json/state` body. For a display chosen by state,
+  the sample value is the state, and the preview says which case it picked. A custom display swaps the
   mock-up for a JSON editor and lists what each of its segment names filled to;
   the shared validator's complaint appears as you type.
 
@@ -278,7 +315,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 101 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 106 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -375,6 +412,11 @@ Configuration:
 - **Removing an entity another display names is refused on save**, with the
   path to the placeholder — the Entities tab only checks the flow before
   removing.
+- **A display chosen by state compares the raw state, exactly.** `"Sunny"` is
+  not `sunny`, and a temperature's state is `"18.4"`, not `18C`. A state with
+  spaces around it is refused, because it could never match; so is one listed
+  by two cases, because only the first would ever be drawn. A built-in's state
+  is the text it renders.
 - **A placeholder a reading cannot supply is empty or zero, not an error.** The
   same body may be in front of a sensor that has dropped off, and `{{percent}}`
   on a media player is `0` — the same thing a `bar` display draws. Nothing warns
@@ -382,6 +424,18 @@ Configuration:
 
 WLED:
 
+- **A custom body that sets segment geometry changes it on the device for
+  everyone.** `start`/`stop`/`startY`/`stopY` are segment state, like `tp`:
+  shrink segment 0 to columns 8-31 for a glyph, and every other display on
+  segment 0 then draws in 24 columns. Give a glyph layout segments of its own
+  (1 and 2 in the example) and leave 0 full width. Only the segments being
+  drawn are on — the others are switched off around every payload — so
+  overlapping segments do not fight.
+- **A glyph's pixels are unverified against hardware**, like the bar's
+  direction: that `i` creates nothing and only paints, that indices run row by
+  row across a 2D segment, and that a body naming segments 1 and 2 creates them
+  if the device has fewer. The editor cannot show it either — a custom body has
+  no mock-up.
 - **`ix` is the percentage for the Percent effect (FX 98), not `sx`.** `sx` is
   how fast the bar slides to a new value. (From FX.cpp by way of
   `wled-now-playing/wled/effects.ts`, which has run against the hardware.)
@@ -497,7 +551,7 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 101 tests, no hardware and no Home Assistant:
+`deno task test` — 106 tests, no hardware and no Home Assistant:
 
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`
@@ -526,6 +580,11 @@ Home Assistant's compressed WebSocket format:
   not using switched off either way; the validator holding one to the entity's
   rules (no bar on a built-in, only the panel's entities named) and refusing
   two members with one id
+- a display chosen by state: the case listing the state drawn as its custom
+  body with its pixels, a state no case lists drawing `otherwise` with the icon
+  case's segments switched off, and the validator refusing a choice inside a
+  case, a state listed twice, one padded with spaces, and a bar hidden in a
+  built-in's `otherwise`
 - an old file: version 2's loop entity ids becoming members, numbered only
   where one repeats; version 1 upgraded and then passing the current validator, a
   `prefix` becoming the text in front of `{{value}}`, and a current file passed
@@ -584,4 +643,10 @@ validator's refusals. Most recently: both built-in items added from the picker
 and the search surviving it, the clock and the date previewing at every format,
 `bar` absent from a built-in's styles, the pickers in the flow and on the
 Display tab, a picker staying open across the live poll, and a truncated library
-page reporting what it left out.
+page reporting what it left out. Then, against a copy of a real config: a rule
+label, a text template and a time typed with real keystrokes without losing
+focus; a time window saved and the panel falling through it; a version 1 file
+upgraded on start and saved as current; one entity added to a rotation twice,
+given its own view and both forms appearing in turn in the dry-run log; and a
+weather entity chosen by state, the sample picking the icon case and then
+`otherwise`.

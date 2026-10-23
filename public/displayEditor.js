@@ -111,6 +111,9 @@ const outputCard = (context, refresh) => {
     ]);
 };
 
+/** What a choice by state falls back to, which is what a change of style keeps. */
+const plainOf = display => display.style === 'byState' ? display.otherwise : display;
+
 /** A custom display's segments live in its body, so this has to dig one out. */
 const segmentIdOf = display => {
     if (display.style !== 'custom') {
@@ -144,7 +147,12 @@ const customSeed = (display, segmentId, color) => ({
  * a colour again because you changed how the value is drawn reads as the
  * editor having forgotten it.
  */
-const toStyle = (style, display) => {
+const toStyle = (style, current) => {
+    if (style === 'byState') {
+        return { style: 'byState', cases: [], otherwise: structuredClone(plainOf(current)) };
+    }
+
+    const display = plainOf(current);
     const segmentId = segmentIdOf(display);
     const color = display.color ?? WHITE;
 
@@ -274,6 +282,130 @@ const formatField = (entity, context) => {
     return field('format', select);
 };
 
+/**
+ * A view's own JSON draft and every one of its cases', which are keyed under
+ * it. Dropped together, because a case's draft is keyed by its position.
+ */
+const forgetDrafts = key => {
+    for (const draftKey of [...drafts.keys()]) {
+        if (draftKey === key || draftKey.startsWith(`${key}#`)) {
+            drafts.delete(draftKey);
+        }
+    }
+};
+
+const caseButtons = (view, cases, index, context) => {
+    const move = offset => {
+        const [moved] = cases.splice(index, 1);
+        cases.splice(index + offset, 0, moved);
+        forgetDrafts(view.key);
+        context.changed();
+    };
+    return [
+        make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: '↑',
+            disabled: index === 0,
+            title: 'Check this case earlier',
+            onClick: () => move(-1),
+        }),
+        make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: '↓',
+            disabled: index === cases.length - 1,
+            title: 'Check this case later',
+            onClick: () => move(1),
+        }),
+        make('button', {
+            class: 'small danger',
+            type: 'button',
+            textContent: 'delete',
+            onClick: () => {
+                cases.splice(index, 1);
+                forgetDrafts(view.key);
+                context.changed();
+            },
+        }),
+    ];
+};
+
+/**
+ * A display chosen by state: a list of cases, each a plain display of its own
+ * edited by the same fields as any other, and an `otherwise`. Each case is
+ * handed to `displayFields` as a view of its own, which is why every holder
+ * keeps its display under `display` — a case does too.
+ */
+const byStateFields = (view, context, refresh, headerFields) => {
+    const display = view.holder.display;
+    const nestedView = (key, holder) => ({ ...view, key: `${view.key}#${key}`, holder, nested: true });
+
+    const caseBlocks = display.cases.map((stateCase, index) => {
+        const states = make('input', {
+            type: 'text',
+            class: 'mono',
+            value: stateCase.states.join(', '),
+            placeholder: 'sunny, clear-night',
+            onInput: event => {
+                const parts = event.target.value.split(',').map(part => part.trim());
+                stateCase.states = parts.filter(part => part !== '');
+                context.edited();
+                refresh();
+            },
+        });
+
+        return make('div', { class: 'state-case' }, [
+            make('div', { class: 'rule-head' }, [
+                make('span', { class: 'keyword', textContent: index === 0 ? 'WHEN' : 'ELSE WHEN' }),
+                make('div', { style: 'flex:1;min-width:160px' }, [states]),
+                ...caseButtons(view, display.cases, index, context),
+            ]),
+            displayFields(nestedView(index, stateCase), context, refresh),
+        ]);
+    });
+
+    const otherwiseHolder = {
+        get display() {
+            return display.otherwise;
+        },
+        set display(next) {
+            display.otherwise = next;
+        },
+    };
+
+    const addCase = make('button', {
+        class: 'small',
+        type: 'button',
+        textContent: '+ case',
+        onClick: () => {
+            // Starts as a copy of `otherwise`, so a new case changes nothing
+            // until it is edited, rather than drawing a default nobody chose.
+            display.cases.push({ states: [], display: structuredClone(display.otherwise) });
+            context.changed();
+        },
+    });
+
+    return make('div', {}, [
+        make('div', { class: 'fields' }, headerFields.filter(Boolean)),
+        make('p', {
+            class: 'caveat',
+            textContent: 'Read top to bottom: the first case listing the entity’s state is drawn, '
+                + 'compared exactly — “sunny”, “clear-night”, “playing”. A picture for a state is '
+                + 'a custom WLED JSON case drawing pixels with the segment’s "i" field; the '
+                + 'device’s fonts are ASCII only.',
+        }),
+        ...caseBlocks,
+        make('div', { class: 'row', style: 'margin:4px 0 12px' }, [addCase]),
+        make('div', { class: 'state-case' }, [
+            make('div', { class: 'rule-head' }, [
+                make('span', { class: 'keyword', textContent: 'OTHERWISE' }),
+            ]),
+            displayFields(nestedView('otherwise', otherwiseHolder), context, refresh),
+        ]),
+    ]);
+};
+
 const displayFields = (view, context, refresh) => {
     const { entity, holder } = view;
     const display = holder.display;
@@ -299,6 +431,8 @@ const displayFields = (view, context, refresh) => {
         option('text', 'scrolling text', display.style === 'text'),
         isBuiltin ? null : option('bar', 'bar', display.style === 'bar'),
         option('custom', 'custom WLED JSON', display.style === 'custom'),
+        // A case cannot itself choose by state; the validator refuses it too.
+        view.nested ? null : option('byState', 'depends on its state', display.style === 'byState'),
     ].filter(Boolean);
 
     const stylePicker = make('select', {
@@ -309,7 +443,7 @@ const displayFields = (view, context, refresh) => {
             }
             // The draft belongs to the body being replaced, so keeping it would
             // put the old JSON back the next time `custom` was chosen.
-            drafts.delete(view.key);
+            forgetDrafts(view.key);
             holder.display = toStyle(style, display);
             context.changed();
         },
@@ -318,7 +452,11 @@ const displayFields = (view, context, refresh) => {
     // The format belongs to the entity, so it is set on the entity's own
     // display and applies wherever the flow shows it.
     const isFlowDisplay = view.target !== null;
-    const format = !isBuiltin || isFlowDisplay ? null : formatField(entity, context);
+    const format = !isBuiltin || isFlowDisplay || view.nested ? null : formatField(entity, context);
+
+    if (display.style === 'byState') {
+        return byStateFields(view, context, refresh, [format, field('drawn as', stylePicker)]);
+    }
 
     if (display.style === 'custom') {
         return make('div', {}, [
@@ -420,9 +558,19 @@ const describeCustom = result => {
     return lines.map(line => make('div', { textContent: line }));
 };
 
+/** Which case a sample picked, said in the words the Display tab uses. */
+const describeChoice = (result, sample) => {
+    if (result.caseIndex === undefined) {
+        return '';
+    }
+    if (result.caseIndex === -1) {
+        return `No case lists “${sample.value}”, so “otherwise” is drawn.`;
+    }
+    return `“${sample.value}” picks case ${result.caseIndex + 1}.`;
+};
+
 const refreshPreview = async (view, sample, nodes, context) => {
     const { entity } = view;
-    const display = view.holder.display;
     const unit = entity.kind === 'temperature' ? 'C' : entity.kind === 'percent' ? '%' : '';
     try {
         const result = await postJson('/api/preview', {
@@ -437,6 +585,17 @@ const refreshPreview = async (view, sample, nodes, context) => {
 
         nodes.problem.hidden = true;
         nodes.payload.textContent = JSON.stringify(result.payload, null, 2);
+
+        /**
+         * Drawn from what the server says is drawn, not from what is being
+         * edited: for a display chosen by state that is whichever case the
+         * sample picked, and only the server's code decides that.
+         */
+        const display = result.display;
+        nodes.choice.textContent = describeChoice(result, sample);
+        nodes.choice.hidden = result.caseIndex === undefined;
+        nodes.caveat.textContent = CAVEATS[display.style];
+        preview.canvas.hidden = display.style === 'custom';
 
         nodes.warnings.replaceChildren(...result.warnings.map(name =>
             make('span', { class: 'warning', textContent: WARNING_TEXT[name] ?? name })
@@ -502,11 +661,13 @@ const CAVEATS = {
  */
 const previewCard = (view, context) => {
     const { entity } = view;
-    const display = view.holder.display;
+    const isByState = view.holder.display.style === 'byState';
     const stored = samples.get(entity.entityId);
     const sample = stored ?? { value: SAMPLES[entity.kind] ?? '', artist: '' };
 
     const nodes = {
+        caveat: make('p', { class: 'caveat' }),
+        choice: make('p', { class: 'choice', hidden: true }),
         readout: make('div', { class: 'caveat' }),
         warnings: make('div', { class: 'warnings' }),
         problem: make('p', { class: 'warning', hidden: true }),
@@ -543,8 +704,6 @@ const previewCard = (view, context) => {
         },
     });
 
-    const caveat = CAVEATS[display.style];
-
     /**
      * A built-in item has nothing to fake: the preview is reading the same
      * clock the service will send, so there is no sample to type and what is
@@ -562,10 +721,11 @@ const previewCard = (view, context) => {
 
     const node = card('Preview', [
         make('div', { class: 'preview' }, [
-            display.style === 'custom' ? null : preview.canvas,
-            make('p', { class: 'caveat', textContent: caveat }),
+            preview.canvas,
+            nodes.caveat,
             clockNote,
-            isBuiltin ? null : field('sample value', sampleInput),
+            isBuiltin ? null : field(isByState ? 'sample value — the state to choose by' : 'sample value', sampleInput),
+            nodes.choice,
             isBuiltin || artistInput === null ? null : field('sample artist', artistInput),
             nodes.readout,
             nodes.warnings,
@@ -646,7 +806,7 @@ const flowDisplayHeader = (view, context) => make('div', {}, [
             textContent: 'use its own display here',
             onClick: () => {
                 delete view.holder.display;
-                drafts.delete(view.key);
+                forgetDrafts(view.key);
                 context.showTab('flow');
                 context.changed();
             },

@@ -171,6 +171,9 @@ const summarise = display => {
     if (display.style === 'text') {
         return display.text;
     }
+    if (display.style === 'byState') {
+        return 'by state';
+    }
     return display.style === 'bar' ? 'a bar' : 'custom JSON';
 };
 

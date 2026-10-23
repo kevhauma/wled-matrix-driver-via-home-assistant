@@ -1,9 +1,10 @@
 import { defaultFormatFor, isBuiltinId } from './builtins.ts';
-import { PanelEntity, WledDisplay } from './entities.ts';
+import { PanelEntity, PlainDisplay, WledDisplay } from './entities.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
 import { readBuiltin, readEntity, Reading } from './readings.ts';
 import {
     MAX_TEXT_LENGTH,
+    resolveDisplay,
     segmentIdsOf,
     toDisplayText,
     toEntityValues,
@@ -61,6 +62,17 @@ export type Preview = {
     payload: WledPayload,
     /** A custom display's own segments; empty for `text` and `bar`. */
     customSegments: CustomSegmentPreview[],
+    /**
+     * What is drawn for the sample: the display itself, or for a `byState`
+     * one the case the sample matched. The editor draws its mock-up from
+     * this, not from what it is editing.
+     */
+    display: PlainDisplay,
+    /**
+     * Which case of a `byState` display the sample matched: its index, or -1
+     * for `otherwise`. Absent for any other display.
+     */
+    caseIndex: number | undefined,
     warnings: PreviewWarning[],
 };
 
@@ -172,7 +184,18 @@ export const toPreview = (
     const readings = new Map(liveReadings);
     readings.set(entityId, reading);
     const others = toEntityValues(readings);
-    const display = override ?? entity.display;
+    /**
+     * The state a `byState` display is decided on: the sample as typed, which
+     * is what Home Assistant would send as the state — or, for a built-in, the
+     * text it renders, which is what the service compares against too.
+     */
+    const state = isBuiltin && reading.kind === 'text' ? reading.candidates[0] ?? '' : sampleValue;
+    const states = new Map([[entityId, state]]);
+    const chosen = override ?? entity.display;
+    const display = resolveDisplay(chosen, state);
+    const caseIndex = chosen.style === 'byState'
+        ? chosen.cases.findIndex(candidate => candidate.display === display)
+        : undefined;
     const text = toDisplayText(display, reading, others);
 
     /**
@@ -183,7 +206,7 @@ export const toPreview = (
     const decision = override === undefined
         ? { show: 'entity' as const, entityId }
         : { show: 'entity' as const, entityId, display: override };
-    const payload = toWledPayload({ decision, entities, flowDisplays, readings, brightness });
+    const payload = toWledPayload({ decision, entities, flowDisplays, readings, states, brightness });
 
     const visible = visibleLetters(PANEL_COLUMNS);
     const warnings: PreviewWarning[] = [];
@@ -250,6 +273,8 @@ export const toPreview = (
         reading,
         payload,
         customSegments,
+        display,
+        caseIndex,
         warnings,
     };
 };

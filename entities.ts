@@ -36,7 +36,7 @@ export type ReadingKind = typeof ReadingKinds[keyof typeof ReadingKinds];
  * It gives up the abstraction entirely: you write the device's own JSON, and
  * nothing here knows what any of it means.
  */
-export type WledDisplay =
+export type PlainDisplay =
     | {
         style: 'text',
         segmentId: number,
@@ -66,6 +66,32 @@ export type WledDisplay =
          * `panelConfig.ts` insists each of those carries a literal `id`.
          */
         payload: Record<string, unknown>,
+    };
+
+/**
+ * One case of a `byState` display: drawn while the entity's raw state is any
+ * of `states`, compared exactly — `sunny`, `clear-night`, `playing`.
+ */
+export type StateCase = {
+    states: string[],
+    display: PlainDisplay,
+};
+
+/**
+ * Either one way of drawing the entity, or a choice between several made on
+ * its raw state: the first case listing the state wins, and `otherwise` is
+ * drawn when none does. The cases are plain displays — a choice inside a
+ * choice would be a second flow, and the flow is where conditions belong.
+ *
+ * A glyph for a state is a `custom` case: WLED's fonts are ASCII only, so a
+ * picture is per-pixel data in the body's own `seg[].i`.
+ */
+export type WledDisplay =
+    | PlainDisplay
+    | {
+        style: 'byState',
+        cases: StateCase[],
+        otherwise: PlainDisplay,
     };
 
 export type PanelEntity = {

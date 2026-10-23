@@ -427,6 +427,26 @@ label.field {
     max-width: 220px;
 }
 
+/* --- a display chosen by state --- */
+
+.state-case {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--surface-raised);
+}
+
+.state-case .rule-head {
+    margin-bottom: 10px;
+}
+
+.choice {
+    margin: 0;
+    color: var(--accent);
+    font-size: 13px;
+}
+
 /* --- the panel preview --- */
 
 .preview {
