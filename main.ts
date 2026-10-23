@@ -37,7 +37,7 @@ const startUpOrExit = async () => {
     }
 };
 
-const { config, panel, wasSeeded } = await startUpOrExit();
+const { config, panel, wasSeeded, upgradedFrom } = await startUpOrExit();
 const bridge = createBridge({ config, panel, onLog: log });
 
 /** The server reads this, so a save is visible to the next `GET /api/config`. */
@@ -62,6 +62,10 @@ console.log(`editor on http://127.0.0.1:${config.port}`);
 if (wasSeeded) {
     const path = configPath();
     console.log(`wrote ${path} from the defaults`);
+}
+if (upgradedFrom !== undefined) {
+    const path = configPath();
+    console.log(`read ${path} as version ${upgradedFrom}; the next save writes version ${panel.version}`);
 }
 console.log('');
 

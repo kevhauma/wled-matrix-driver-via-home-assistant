@@ -46,7 +46,7 @@ const defaultDisplay = kind => {
     if (kind === 'percent') {
         return { style: 'bar', segmentId: 0, color: [0, 255, 80], trackColor: [0, 20, 40] };
     }
-    return { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 70 };
+    return { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 70, text: '{{value}}' };
 };
 
 const toPanelEntity = item => {

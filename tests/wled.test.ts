@@ -99,7 +99,7 @@ Deno.test('segments other than the one being shown are switched off', () => {
 Deno.test('a shorter whole form is preferred over cutting the longer one', () => {
     const entity = PANEL_ENTITIES[0];
 
-    const fitted = toDisplayText(entity, {
+    const fitted = toDisplayText(entity.display, {
         kind: 'text',
         candidates: ['Superstitious Fantasy - Windwaker', 'Superstitious Fantasy'],
         isPlaying: true,
@@ -110,7 +110,7 @@ Deno.test('a shorter whole form is preferred over cutting the longer one', () =>
 Deno.test('text with no form that fits is cut to the segment name limit', () => {
     const entity = PANEL_ENTITIES[0];
 
-    const long = toDisplayText(entity, {
+    const long = toDisplayText(entity.display, {
         kind: 'text',
         candidates: ['A title that runs well past the thirty-two character segment name limit'],
         isPlaying: true,
@@ -121,7 +121,7 @@ Deno.test('text with no form that fits is cut to the segment name limit', () => 
 Deno.test('non-ASCII is stripped, because the device fonts cannot draw it', () => {
     const entity = PANEL_ENTITIES[0];
 
-    const accented = toDisplayText(entity, {
+    const accented = toDisplayText(entity.display, {
         kind: 'text',
         candidates: ['Björk • Army'],
         isPlaying: true,
@@ -263,4 +263,33 @@ Deno.test('an unchanged payload is not sent twice', () => {
     };
 
     return run();
+});
+
+const textDisplay = (text: string): PanelEntity['display'] =>
+    ({ style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text });
+
+Deno.test('a text template puts anything around the value, which is a suffix', () => {
+    const power: Reading = { kind: 'text', candidates: ['1234'], isPlaying: false };
+
+    const drawn = toDisplayText(textDisplay('PV {{value}}W'), power);
+
+    assertSame(drawn, 'PV 1234W', 'prefix and suffix around the value');
+});
+
+Deno.test('a text template is fitted per form of the value, keeping its own text', () => {
+    const song: Reading = {
+        kind: 'text',
+        candidates: ['Superstitious Fantasy - Windwaker', 'Superstitious Fantasy'],
+        isPlaying: true,
+    };
+
+    const drawn = toDisplayText(textDisplay('> {{value}} <'), song);
+
+    assertSame(drawn, '> Superstitious Fantasy <', 'dropped the artist, kept both ends');
+});
+
+Deno.test('a text template draws nothing for a reading that has dropped off', () => {
+    const drawn = toDisplayText(textDisplay('PV {{value}}W'), { kind: 'unavailable' });
+
+    assertSame(drawn, '', 'not the template around a gap');
 });

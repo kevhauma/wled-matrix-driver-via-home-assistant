@@ -1,5 +1,5 @@
 {
-    "version": 1,
+    "version": 2,
     "output": {
         "wledIp": "",
         "brightness": 80
@@ -16,7 +16,8 @@
                     255,
                     255
                 ],
-                "speed": 80
+                "speed": 80,
+                "text": "{{value}}"
             }
         },
         {
@@ -30,7 +31,8 @@
                     255,
                     255
                 ],
-                "speed": 80
+                "speed": 80,
+                "text": "{{value}}"
             }
         },
         {
@@ -44,7 +46,8 @@
                     160,
                     0
                 ],
-                "speed": 60
+                "speed": 60,
+                "text": "{{value}}"
             }
         },
         {
@@ -77,7 +80,8 @@
                     175,
                     255
                 ],
-                "speed": 60
+                "speed": 60,
+                "text": "{{value}}"
             }
         },
         {
@@ -92,7 +96,8 @@
                     175,
                     255
                 ],
-                "speed": 60
+                "speed": 60,
+                "text": "{{value}}"
             }
         }
     ],

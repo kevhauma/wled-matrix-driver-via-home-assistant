@@ -5,8 +5,8 @@ import { readBuiltin, readEntity, Reading } from './readings.ts';
 import {
     MAX_TEXT_LENGTH,
     segmentIdsOf,
-    toCandidates,
     toDisplayText,
+    toTextOptions,
     toWledPayload,
     visibleLetters,
     WledPayload,
@@ -143,7 +143,7 @@ export const toPreview = (
     const isBuiltin = isBuiltinId(entityId);
     const sample = { value: sampleValue, unit, artist: sampleArtist };
     const reading = previewReading(entity, sample);
-    const text = toDisplayText(entity, reading);
+    const text = toDisplayText(entity.display, reading);
 
     /**
      * The whole payload, not just this entity's segment: `toWledPayload` adds
@@ -198,11 +198,9 @@ export const toPreview = (
          * out as `18C`, and calling that a shortening would cry wolf on every
          * numeric reading.
          */
-        const candidates = toCandidates(reading);
-        const prefix = entity.display.prefix ?? '';
-        const longest = `${prefix}${candidates[0] ?? ''}`;
-        const asciiLongest = longest.replace(/[^\x20-\x7e]/g, '');
-        if (text !== asciiLongest) {
+        const options = toTextOptions(entity.display, reading);
+        const longest = options[0] ?? '';
+        if (text !== longest) {
             warnings.push('shortened');
         }
         // WLED centres text that fits and scrolls only what does not.

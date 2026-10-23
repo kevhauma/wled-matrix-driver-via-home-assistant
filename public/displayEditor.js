@@ -29,13 +29,20 @@ const WARNING_TEXT = {
  * the editor is plain browser JavaScript. Changing one means changing both.
  */
 const PLACEHOLDER_HELP = [
-    ['{{value}}', 'what the text style would have drawn: 18C, 64%, a media title'],
+    ['{{value}}', 'the reading as the panel draws it: 18C, 64%, a media title'],
     ['{{percent}}', '0-100 — the number a Percent segment wants in ix'],
     ['{{degrees}}', 'the temperature, rounded'],
     ['{{unit}}', 'the entity’s unit, e.g. C'],
     ['{{title}}', 'a media player’s title on its own'],
     ['{{artist}}', 'a media player’s artist on its own'],
 ];
+
+const placeholderHelp = () => make('div', { class: 'tokens' }, PLACEHOLDER_HELP.map(
+    ([token, meaning]) => make('div', { class: 'token' }, [
+        make('code', { textContent: token }),
+        make('span', { textContent: meaning }),
+    ]),
+));
 
 const WHITE = [255, 255, 255];
 
@@ -113,7 +120,7 @@ const segmentIdOf = display => {
 
 /**
  * What switching to `custom` starts from: the body the `text` style would have
- * sent for this entity. An empty object would be a worse start — you would have
+ * sent for this entity, its template included. An empty object would be a worse start — you would have
  * to know the effect id, which sliders matter and that `ix` and `c2` have to be
  * pinned before anything appeared on the panel at all.
  */
@@ -122,7 +129,7 @@ const customSeed = (display, segmentId, color) => ({
     seg: [{
         id: segmentId,
         fx: 122,
-        n: '{{value}}',
+        n: display.style === 'text' ? display.text : '{{value}}',
         sx: display.style === 'text' ? display.speed : 80,
         ix: 128,
         c2: 0,
@@ -143,7 +150,7 @@ const toStyle = (style, display) => {
         return { style: 'bar', segmentId, color, trackColor: [0, 20, 40] };
     }
     if (style === 'text') {
-        return { style: 'text', segmentId, color, speed: 70 };
+        return { style: 'text', segmentId, color, speed: 70, text: '{{value}}' };
     }
     const payload = customSeed(display, segmentId, color);
     return { style: 'custom', payload };
@@ -198,13 +205,6 @@ const customFields = (entity, context, refresh) => {
         },
     });
 
-    const help = PLACEHOLDER_HELP.map(([token, meaning]) =>
-        make('div', { class: 'token' }, [
-            make('code', { textContent: token }),
-            make('span', { textContent: meaning }),
-        ])
-    );
-
     return make('div', { class: 'custom' }, [
         editor,
         failure,
@@ -215,7 +215,7 @@ const customFields = (entity, context, refresh) => {
                 + 'seg entry needs a literal id — the service has to know which segments this '
                 + 'display owns before it has a value to put in them.',
         }),
-        make('div', { class: 'tokens' }, help),
+        placeholderHelp(),
         make('p', {
             class: 'caveat',
             textContent: 'A string that is nothing but one placeholder takes that value’s own '
@@ -366,23 +366,30 @@ const displayFields = (entity, context, refresh) => {
             display.speed = value;
             edited();
         }));
-        fields.push(field('prefix', make('input', {
+        fields.push(field('text', make('input', {
             type: 'text',
-            value: display.prefix ?? '',
-            placeholder: 'e.g. "bat "',
+            class: 'mono',
+            value: display.text,
+            placeholder: '{{value}}',
             onInput: event => {
-                const text = event.target.value;
-                if (text === '') {
-                    delete display.prefix;
-                } else {
-                    display.prefix = text;
-                }
+                display.text = event.target.value;
                 edited();
             },
         })));
     }
 
-    return make('div', { class: 'fields' }, fields);
+    const fieldGrid = make('div', { class: 'fields' }, fields);
+    if (display.style !== 'text') {
+        return fieldGrid;
+    }
+
+    const note = make('p', {
+        class: 'caveat',
+        textContent: 'Anything around a placeholder is drawn as written, so "PV {{value}}W" is '
+            + 'a prefix and a suffix. A media title too long for the panel is tried again '
+            + 'without its artist before anything is cut.',
+    });
+    return make('div', {}, [fieldGrid, note, placeholderHelp()]);
 };
 
 /**

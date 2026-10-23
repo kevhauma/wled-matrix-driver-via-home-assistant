@@ -14,7 +14,7 @@
  * this file — if a name changes here, change it there too.
  */
 export const Placeholders = {
-    /** Whatever a plain text display would have drawn: `18C`, `64%`, a title. */
+    /** The reading as the panel draws it: `18C`, `64%`, a title. */
     Value: 'value',
     /** 0-100, rounded; 0 when the reading carries no percentage. */
     Percent: 'percent',

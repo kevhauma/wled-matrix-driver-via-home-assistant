@@ -13,7 +13,7 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 const withCustomPayload = (payload: unknown): unknown => ({
-    version: 1,
+    version: 2,
     output: { wledIp: '', brightness: 80 },
     entities: [{ entityId: 'sensor.a', kind: 'percent', display: { style: 'custom', payload } }],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
@@ -108,10 +108,10 @@ Deno.test('a custom display does not need a segmentId or a colour', () => {
  * format on something that is not one.
  */
 
-const TEXT_DISPLAY = { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60 };
+const TEXT_DISPLAY = { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: '{{value}}' };
 
 const withEntity = (entity: unknown): unknown => ({
-    version: 1,
+    version: 2,
     output: { wledIp: '', brightness: 80 },
     entities: [entity],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
@@ -205,7 +205,7 @@ Deno.test('a custom body is allowed on a built-in, which is the way to compose o
 });
 
 const withCondition = (condition: unknown): unknown => ({
-    version: 1,
+    version: 2,
     output: { wledIp: '', brightness: 80 },
     entities: [],
     flow: [{ id: 'night', match: 'all', conditions: [condition], action: { do: 'blank' } }],
@@ -236,4 +236,17 @@ Deno.test('a time window refuses a malformed time, an equal start and end, and a
     assertSame(malformed.includes('conditions[0].from'), true, `malformed names the field: ${malformed}`);
     assertSame(empty.includes('different from'), true, `equal is refused: ${empty}`);
     assertSame(tied.includes('conditions[0].entityId'), true, `an entity is refused: ${tied}`);
+});
+
+Deno.test('a text template refuses an unknown placeholder and an empty string', () => {
+    const typo = entityRefusal({
+        entityId: 'sensor.a',
+        kind: 'text',
+        display: { ...TEXT_DISPLAY, text: '{{valeu}}W' },
+    });
+    // An empty segment name makes Scrolling Text draw the date instead.
+    const empty = entityRefusal({ entityId: 'sensor.a', kind: 'text', display: { ...TEXT_DISPLAY, text: '' } });
+
+    assertSame(typo.includes('display.text'), true, `the typo names the field: ${typo}`);
+    assertSame(empty.includes('non-empty'), true, `empty is refused: ${empty}`);
 });

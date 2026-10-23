@@ -20,13 +20,14 @@ export type PanelOutputConfig = {
 };
 
 export type PanelConfig = {
-    version: 1,
+    version: 2,
     output: PanelOutputConfig,
     entities: PanelEntity[],
     flow: FlowRule[],
 };
 
-export const CONFIG_VERSION = 1;
+/** `configUpgrade.ts` brings an older file up to this before it is parsed. */
+export const CONFIG_VERSION = 2;
 
 /**
  * Reproduces exactly what `whatToShow` used to do in code: the television
@@ -197,6 +198,23 @@ const asHost = (value: unknown, path: string): string => {
 const MAX_CUSTOM_PAYLOAD_LENGTH = 4096;
 
 /**
+ * Every placeholder is one that exists, because an unknown one would reach the
+ * panel as a literal `{{percentage}}` and look like a font problem.
+ */
+const checkPlaceholders = (value: unknown, path: string): void => {
+    const uses = findPlaceholders(value, path);
+    const unknown = uses.find(use => !isPlaceholder(use.name));
+    if (unknown === undefined) {
+        return;
+    }
+    const known = PLACEHOLDER_NAMES.join(', ');
+    throw new Error(
+        `${unknown.path} references an unknown placeholder '{{${unknown.name}}}'. `
+            + `Known: ${known}.`,
+    );
+};
+
+/**
  * A custom display is the one place the configuration holds JSON this project
  * does not understand, so the few things it checks are the ones that keep the
  * rest of the service honest:
@@ -232,16 +250,7 @@ const parseCustomPayload = (value: unknown, path: string): Record<string, unknow
         }
     }
 
-    const uses = findPlaceholders(record, path);
-    const unknown = uses.find(use => !isPlaceholder(use.name));
-    if (unknown !== undefined) {
-        const known = PLACEHOLDER_NAMES.join(', ');
-        throw new Error(
-            `${unknown.path} references an unknown placeholder '{{${unknown.name}}}'. `
-                + `Known: ${known}.`,
-        );
-    }
-
+    checkPlaceholders(record, path);
     return record;
 };
 
@@ -265,11 +274,10 @@ const parseDisplay = (value: unknown, path: string): WledDisplay => {
     }
 
     const speed = asNumberInRange(record.speed, `${path}.speed`, 0, 255);
-    if (record.prefix === undefined) {
-        return { style, segmentId, color, speed };
-    }
-    const prefix = asString(record.prefix, `${path}.prefix`);
-    return { style, segmentId, color, speed, prefix };
+    // Not empty: a blank segment name makes Scrolling Text draw the date.
+    const text = asNonEmptyString(record.text, `${path}.text`);
+    checkPlaceholders(text, `${path}.text`);
+    return { style, segmentId, color, speed, text };
 };
 
 const READING_KINDS = ['percent', 'temperature', 'text'] as const;

@@ -43,8 +43,12 @@ export type WledDisplay =
         color: RGBColor,
         /** Scroll speed, 0-255 as in the WLED UI. */
         speed: number,
-        /** Put in front of the value, e.g. `'bat '`. */
-        prefix?: string,
+        /**
+         * What the segment name says, with `template.ts`'s placeholders:
+         * `'{{value}}'` on its own, or with anything around it, e.g.
+         * `'PV {{value}}W'`. That is the whole of prefixes and suffixes.
+         */
+        text: string,
     }
     | {
         style: 'bar',
@@ -95,19 +99,19 @@ export const PANEL_ENTITIES: PanelEntity[] = [
     {
         entityId: EntityIds.Speaker,
         kind: ReadingKinds.Text,
-        display: { style: 'text', segmentId: 0, color: WHITE, speed: 80 },
+        display: { style: 'text', segmentId: 0, color: WHITE, speed: 80, text: '{{value}}' },
     },
     {
         entityId: EntityIds.Television,
         kind: ReadingKinds.Text,
         // Never drawn: the default flow only ever blanks the panel on this
         // one. The display is here because every entity has one.
-        display: { style: 'text', segmentId: 0, color: WHITE, speed: 80 },
+        display: { style: 'text', segmentId: 0, color: WHITE, speed: 80, text: '{{value}}' },
     },
     {
         entityId: EntityIds.Temperature,
         kind: ReadingKinds.Temperature,
-        display: { style: 'text', segmentId: 0, color: AMBER, speed: 60 },
+        display: { style: 'text', segmentId: 0, color: AMBER, speed: 60, text: '{{value}}' },
     },
     {
         entityId: EntityIds.Battery,
@@ -121,12 +125,12 @@ export const PANEL_ENTITIES: PanelEntity[] = [
         entityId: BuiltinIds.Time,
         kind: ReadingKinds.Text,
         format: defaultFormatFor(BuiltinIds.Time),
-        display: { style: 'text', segmentId: 0, color: SKY, speed: 60 },
+        display: { style: 'text', segmentId: 0, color: SKY, speed: 60, text: '{{value}}' },
     },
     {
         entityId: BuiltinIds.Date,
         kind: ReadingKinds.Text,
         format: defaultFormatFor(BuiltinIds.Date),
-        display: { style: 'text', segmentId: 0, color: SKY, speed: 60 },
+        display: { style: 'text', segmentId: 0, color: SKY, speed: 60, text: '{{value}}' },
     },
 ];

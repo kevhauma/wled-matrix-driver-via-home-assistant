@@ -72,12 +72,8 @@ export type WledPayload = Record<string, unknown>;
 /** WLED's own fonts are ASCII only, so anything else comes out as noise. */
 const toAscii = (text: string): string => text.replace(/[^\x20-\x7e]/g, '');
 
-/**
- * The forms of this reading, longest first. Exported because the editor's
- * preview has to know what `toDisplayText` was choosing between to say whether
- * it had to fall back to a shorter one.
- */
-export const toCandidates = (reading: Reading): readonly string[] => {
+/** The forms of this reading, longest first. */
+const toCandidates = (reading: Reading): readonly string[] => {
     switch (reading.kind) {
         case 'temperature':
             return [`${Math.round(reading.degrees)}${reading.unit}`];
@@ -90,25 +86,16 @@ export const toCandidates = (reading: Reading): readonly string[] => {
     }
 };
 
-/**
- * The string a text display draws, which WLED reads from the segment name.
- *
- * Takes the longest form that fits rather than cutting the longest one short:
- * the device's fonts have no ellipsis glyph, so a truncated name just looks
- * like a misspelling. Only if nothing fits is the last one cut.
- */
 /** How many characters of the segment name are on the panel at once. */
 export const visibleLetters = (columns: number): number =>
     Math.max(1, Math.floor(columns / LETTER_WIDTH));
 
-export const toDisplayText = (entity: PanelEntity, reading: Reading): string => {
-    const prefix = entity.display.style === 'text' ? entity.display.prefix ?? '' : '';
-    const candidates = toCandidates(reading);
-    const options = candidates.map(candidate => {
-        const combined = `${prefix}${candidate}`;
-        return toAscii(combined);
-    });
-
+/**
+ * Takes the longest form that fits rather than cutting the longest one short:
+ * the device's fonts have no ellipsis glyph, so a truncated name just looks
+ * like a misspelling. Only if nothing fits is the last one cut.
+ */
+const fitText = (options: readonly string[]): string => {
     const fitting = options.find(option => option.length <= MAX_TEXT_LENGTH);
     if (fitting !== undefined) {
         return fitting;
@@ -116,6 +103,65 @@ export const toDisplayText = (entity: PanelEntity, reading: Reading): string => 
 
     const longest = options.at(-1) ?? '';
     return longest.slice(0, MAX_TEXT_LENGTH).trimEnd();
+};
+
+/** The reading on its own, as a custom body's `{{value}}` gets it. */
+const toPlainText = (reading: Reading): string => {
+    const candidates = toCandidates(reading);
+    const options = candidates.map(toAscii);
+    return fitText(options);
+};
+
+/**
+ * What placeholders other than `{{value}}` stand for, for this reading.
+ *
+ * A placeholder the reading cannot supply is empty or zero rather than an
+ * error: the same body may be in front of a sensor that has dropped off, and
+ * a bar that draws empty is the established behaviour here.
+ */
+const toReadingValues = (reading: Reading): Omit<PlaceholderValues, 'value'> => {
+    const percent = reading.kind === 'percent' ? Math.round(reading.percent) : 0;
+    const degrees = reading.kind === 'temperature' ? Math.round(reading.degrees) : 0;
+    const unit = reading.kind === 'temperature' ? reading.unit : '';
+    const rawTitle = reading.kind === 'text' ? reading.title ?? '' : '';
+    const rawArtist = reading.kind === 'text' ? reading.artist ?? '' : '';
+    return { percent, degrees, unit, title: toAscii(rawTitle), artist: toAscii(rawArtist) };
+};
+
+/** The two styles this file draws itself. `custom` writes its own body. */
+type DrawnDisplay = Exclude<WledDisplay, { style: 'custom' }>;
+type TextDisplay = Extract<WledDisplay, { style: 'text' }>;
+
+/**
+ * Every form a text display's template can take for this reading, longest
+ * first: the template filled once per form of `{{value}}`. Exported because
+ * the editor's preview has to know what `toDisplayText` was choosing between
+ * to say whether it had to fall back to a shorter one.
+ *
+ * Empty when the reading has no forms at all — a sensor that has dropped off
+ * draws nothing rather than its template's literal text around a gap.
+ */
+export const toTextOptions = (display: TextDisplay, reading: Reading): string[] => {
+    const others = toReadingValues(reading);
+    const candidates = toCandidates(reading);
+    return candidates.map(candidate => {
+        const values = { ...others, value: toAscii(candidate) };
+        const filled = fillTemplate(display.text, values);
+        return toAscii(String(filled));
+    });
+};
+
+/**
+ * The string a display draws as its segment name: the text style's template,
+ * filled and fitted — or, for the other styles, the reading on its own, which
+ * is what a custom body's `{{value}}` means.
+ */
+export const toDisplayText = (display: WledDisplay, reading: Reading): string => {
+    if (display.style !== 'text') {
+        return toPlainText(reading);
+    }
+    const options = toTextOptions(display, reading);
+    return fitText(options);
 };
 
 /**
@@ -142,38 +188,14 @@ export const segmentIdsOf = (display: WledDisplay): number[] => {
     });
 };
 
-/**
- * What each `{{...}}` stands for, for this entity's current reading.
- *
- * A placeholder the reading cannot supply is empty or zero rather than an
- * error: the same custom body may be in front of a sensor that has dropped
- * off, and a bar that draws empty is the established behaviour here.
- */
-const toPlaceholderValues = (entity: PanelEntity, reading: Reading): PlaceholderValues => {
-    const value = toDisplayText(entity, reading);
-    const percent = reading.kind === 'percent' ? Math.round(reading.percent) : 0;
-    const degrees = reading.kind === 'temperature' ? Math.round(reading.degrees) : 0;
-    const unit = reading.kind === 'temperature' ? reading.unit : '';
-    const rawTitle = reading.kind === 'text' ? reading.title ?? '' : '';
-    const rawArtist = reading.kind === 'text' ? reading.artist ?? '' : '';
-    return {
-        value,
-        percent,
-        degrees,
-        unit,
-        title: toAscii(rawTitle),
-        artist: toAscii(rawArtist),
-    };
+/** What each `{{...}}` in a custom body stands for, for this reading. */
+const toPlaceholderValues = (reading: Reading): PlaceholderValues => {
+    const value = toPlainText(reading);
+    const others = toReadingValues(reading);
+    return { ...others, value };
 };
 
-/** The two styles this file draws itself. `custom` writes its own body. */
-type DrawnDisplay = Exclude<WledDisplay, { style: 'custom' }>;
-
-const toSegment = (
-    entity: PanelEntity,
-    display: DrawnDisplay,
-    reading: Reading,
-): WledPayload => {
+const toSegment = (display: DrawnDisplay, reading: Reading): WledPayload => {
     const base = { id: display.segmentId, on: true, frz: false, pal: 0 };
 
     if (display.style === 'bar') {
@@ -194,7 +216,7 @@ const toSegment = (
         };
     }
 
-    const text = toDisplayText(entity, reading);
+    const text = toDisplayText(display, reading);
     return {
         ...base,
         fx: SCROLLING_TEXT_EFFECT_ID,
@@ -249,7 +271,7 @@ export const toWledPayload = (
     const others = [...usedSegmentIds].map(id => ({ id, on: false }));
 
     if (display.style === 'custom') {
-        const values = toPlaceholderValues(entity, reading);
+        const values = toPlaceholderValues(reading);
         const filled = fillTemplate(display.payload, values) as WledPayload;
         const own = Array.isArray(filled.seg) ? filled.seg : [];
         /**
@@ -260,7 +282,7 @@ export const toWledPayload = (
         return { on: true, bri: brightness, ...filled, seg: [...own, ...others] };
     }
 
-    const segment = toSegment(entity, display, reading);
+    const segment = toSegment(display, reading);
     return { on: true, bri: brightness, seg: [segment, ...others] };
 };
 

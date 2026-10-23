@@ -1,4 +1,5 @@
 import { Config } from './config.ts';
+import { upgradePanelConfig } from './configUpgrade.ts';
 import { defaultPanelConfig, PanelConfig, parsePanelConfig } from './panelConfig.ts';
 
 /**
@@ -42,6 +43,8 @@ export type LoadedPanelConfig = {
     panel: PanelConfig,
     /** True when the file was absent and has just been seeded from the defaults. */
     wasSeeded: boolean,
+    /** The version the file is still written in, when it was upgraded on reading. */
+    upgradedFrom: number | undefined,
 };
 
 /**
@@ -59,7 +62,7 @@ export const loadPanelConfig = async (config: Config): Promise<LoadedPanelConfig
         }
         const seeded = defaultPanelConfig(config);
         const panel = await savePanelConfig(seeded);
-        return { panel, wasSeeded: true };
+        return { panel, wasSeeded: true, upgradedFrom: undefined };
     }
 
     let parsed: unknown;
@@ -70,6 +73,7 @@ export const loadPanelConfig = async (config: Config): Promise<LoadedPanelConfig
         throw new Error(`${CONFIG_URL.pathname} is not valid JSON: ${detail}`);
     }
 
-    const panel = parsePanelConfig(parsed);
-    return { panel, wasSeeded: false };
+    const { config: upgraded, upgradedFrom } = upgradePanelConfig(parsed);
+    const panel = parsePanelConfig(upgraded);
+    return { panel, wasSeeded: false, upgradedFrom };
 };

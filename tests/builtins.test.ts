@@ -103,7 +103,7 @@ Deno.test('a built-in reading is text, and never unavailable', () => {
 
 /**
  * The point of rendering it into a `Reading`: `wled.ts` has no idea this is a
- * clock, so a prefix, the segment name and the other segments all work as they
+ * clock, so a template, the segment name and the other segments all work as they
  * do for a sensor.
  */
 Deno.test('a clock reaches the device as an ordinary text segment', () => {
@@ -111,7 +111,7 @@ Deno.test('a clock reaches the device as an ordinary text segment', () => {
         entityId: BuiltinIds.Time,
         kind: 'text',
         format: 'hour24',
-        display: { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, prefix: 'at ' },
+        display: { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: 'at {{value}}' },
     };
     const readings = new Map<string, Reading>([
         [BuiltinIds.Time, readBuiltin('hour24', AFTERNOON)],
@@ -125,6 +125,6 @@ Deno.test('a clock reaches the device as an ordinary text segment', () => {
     });
 
     const segments = payload.seg as Record<string, unknown>[];
-    assertSame(segments[0].n, 'at 14:32', 'the prefix and the clock in the segment name');
+    assertSame(segments[0].n, 'at 14:32', 'the template and the clock in the segment name');
     assertSame(segments[0].fx, 122, 'Scrolling Text, like any other text display');
 });

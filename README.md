@@ -37,6 +37,7 @@ Then open **http://127.0.0.1:8000** to configure it.
 | [`panel.config.json`](panel.config.json.example) | The configuration the editor writes: entities, flow, output |
 | [`flow.ts`](flow.ts) | The rule, condition and action types the flow is made of |
 | [`panelConfig.ts`](panelConfig.ts) | The default flow, and the one validator the file and the API share |
+| [`configUpgrade.ts`](configUpgrade.ts) | Brings a file written by an older version up to the current shape |
 | [`configStore.ts`](configStore.ts) | Reads that file, seeds it, writes it back atomically |
 | [`source.ts`](source.ts) | Where readings come from — the mock, or the real socket |
 | [`builtins.ts`](builtins.ts) | The clock and the date: the items that are not Home Assistant's |
@@ -95,6 +96,14 @@ WLED effect id — which effect that becomes and which slider carries what is
 abstraction when the two intents cannot say what you want; see below. Entities
 no longer carry a `role`: the order of the rules is the priority.
 
+A `text` display says what it draws with a `text` template: `"{{value}}"` on
+its own, or with anything around it — `"PV {{value}}W"` is a prefix and a
+suffix, and there is no separate field for either. The placeholders are the
+custom body's, below. `{{value}}` is the one that is fitted: a media player's
+`Title - Artist` is tried in the template first, then `Title` alone, before
+anything is cut at 32 characters. A reading that has dropped off draws
+nothing, not the template's own text around a gap.
+
 `PANEL_ENTITIES` in `entities.ts` is now only the **seed** for a fresh
 `panel.config.json`. Once that file exists, it is the registry.
 
@@ -111,7 +120,7 @@ custom body, with nothing downstream knowing the difference.
     "entityId": "builtin.time",
     "kind": "text",
     "format": "hour24",
-    "display": { "style": "text", "segmentId": 0, "color": [110, 175, 255], "speed": 60 }
+    "display": { "style": "text", "segmentId": 0, "color": [110, 175, 255], "speed": 60, "text": "{{value}}" }
 }
 ```
 
@@ -169,7 +178,7 @@ go wrong on a device you cannot read a stack trace from:
 
 | | |
 | --- | --- |
-| `{{value}}` | whatever the `text` style would have drawn: `18C`, `64%`, a media title |
+| `{{value}}` | the reading as the panel draws it: `18C`, `64%`, a media title — without a text display's own template |
 | `{{percent}}` | 0-100, rounded — the number `ix` wants on a Percent segment |
 | `{{degrees}}` | the temperature, rounded |
 | `{{unit}}` | the entity's `unit_of_measurement` |
@@ -237,7 +246,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 83 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 90 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -278,6 +287,11 @@ are genuinely better at, and it stays one endpoint rather than one per feature.
 
 Configuration:
 
+- **An older `panel.config.json` is upgraded as it is read, and rewritten only
+  by the next save.** `configUpgrade.ts` takes it one version at a time — 1 to 2
+  folded a text display's `prefix` into its `text` template — and the start-up
+  log says when it did. Until you save, the file on disk is still the old
+  version, so it can be read by the old code.
 - **`WLED_IP` and `WLED_BRIGHTNESS` seed `panel.config.json` once, then the file
   wins.** Editing `.env` afterwards does nothing, which is confusing exactly
   once. Delete the file to seed it again. `HA_BASE_URL`, `HA_TOKEN` and `PORT`
@@ -431,7 +445,7 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 83 tests, no hardware and no Home Assistant:
+`deno task test` — 90 tests, no hardware and no Home Assistant:
 
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`
@@ -446,6 +460,13 @@ Home Assistant's compressed WebSocket format:
   rotation advancing on its dwell, **a rotation resuming on the entity it was on
   after an interruption**, one whose members have all dropped off falling
   through, and one losing a member mid-turn
+- a text template: a prefix and a suffix around the value, fitted per form of
+  the value so the artist is dropped before either end is, and a dropped-off
+  reading drawing nothing; the validator refusing an empty one and a typo'd
+  placeholder in one
+- an old file: version 1 upgraded and then passing the current validator, a
+  `prefix` becoming the text in front of `{{value}}`, and a current file passed
+  through untouched
 - the payloads: `ix` carrying the percentage, the bar's `m12`/`tp`/`rY` going
   out and text's `tp` going out *off*, text in the segment name, other
   segments switched off rather than emptied, the text fitting and ASCII rules,
@@ -465,7 +486,7 @@ Home Assistant's compressed WebSocket format:
 - the built-in items: every format against a fixed instant, midnight and noon on
   the 12-hour clock, every format being ASCII so nothing is stripped on the way
   to the device, each item offering only its own formats, a clock reaching the
-  device as an ordinary text segment with its prefix, and the examples
+  device as an ordinary text segment through its template, and the examples
   `/api/builtins` serves
 - the validator on a built-in: no format refused with the choices named, the
   other item's format refused, a `bar` display refused, a stray format on a Home
