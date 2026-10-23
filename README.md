@@ -375,6 +375,11 @@ The editor:
   "matching now" mark, which took the caret out of a label being typed; the mark
   is now moved in place. Anything else added to that tab has to be told about
   the live poll, or it will be the thing that does not survive it.
+- **A field you type into or drag reports `edited`, not `changed`.** `changed`
+  re-renders the whole tab, which replaces the input under the caret — a label
+  then takes one letter at a time, and a slider or colour drag ends after one
+  step. `changed` is for selects, buttons and pickers, whose edits can alter
+  what else the tab shows.
 - **The editor repeats `template.ts`'s placeholder names by hand**, because it
   is plain browser JavaScript and cannot import a `.ts` file. The built-in
   formats are *not* repeated — they come from `/api/builtins` with a live

@@ -66,7 +66,7 @@ const conditionRow = (rule, condition, index, context) => {
         onInput: event => {
             const raw = event.target.value;
             condition.value = condition.test === 'equals' ? raw : Number(raw);
-            context.changed();
+            context.edited();
         },
     });
 
@@ -172,7 +172,7 @@ const loopEditor = (rule, context) => {
             value: action.dwellSeconds,
             onInput: event => {
                 action.dwellSeconds = Number(event.target.value);
-                context.changed();
+                context.edited();
             },
         }),
     ]);
@@ -257,9 +257,12 @@ const ruleCard = (rule, index, context) => {
         type: 'text',
         value: rule.label ?? '',
         placeholder: 'what this rule is for',
+        // `edited` rather than `changed`, as for every field typed into on
+        // this tab: a re-render replaces the input and takes the caret with it
+        // after one letter. Nothing else on the block depends on these values.
         onInput: event => {
             rule.label = event.target.value;
-            context.changed();
+            context.edited();
         },
     });
 

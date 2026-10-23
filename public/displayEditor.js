@@ -49,18 +49,34 @@ const samples = new Map();
  */
 const drafts = new Map();
 
-const outputCard = context => {
-    const { config } = context;
-
-    const brightness = make('input', {
+/**
+ * A field whose label carries the control's current value, e.g. `speed — 70`.
+ * The label is updated in place, because re-rendering on every `input` event
+ * replaces the slider under the pointer and ends the drag.
+ */
+const sliderField = (name, value, onValue) => {
+    const caption = document.createTextNode(`${name} — ${value}`);
+    const slider = make('input', {
         type: 'range',
         min: '0',
         max: '255',
-        value: config.output.brightness,
+        value,
         onInput: event => {
-            config.output.brightness = Number(event.target.value);
-            context.changed();
+            const next = Number(event.target.value);
+            caption.textContent = `${name} — ${next}`;
+            onValue(next);
         },
+    });
+    return make('label', { class: 'field' }, [caption, slider]);
+};
+
+const outputCard = (context, refresh) => {
+    const { config } = context;
+
+    const brightness = sliderField('brightness', config.output.brightness, value => {
+        config.output.brightness = value;
+        context.edited();
+        refresh();
     });
 
     const ip = make('input', {
@@ -75,7 +91,7 @@ const outputCard = context => {
 
     return card('Output', [
         make('div', { class: 'fields' }, [
-            field(`brightness — ${config.output.brightness}`, brightness),
+            brightness,
             field('WLED address', ip),
         ]),
         make('p', {
@@ -260,6 +276,17 @@ const displayFields = (entity, context, refresh) => {
     const display = entity.display;
 
     /**
+     * Every field below that is typed into or dragged ends here rather than in
+     * `changed`: a re-render replaces the control mid-edit, which takes the
+     * caret after one letter and ends a slider or colour drag. Only the
+     * preview depends on these values, so it is all that is redrawn.
+     */
+    const edited = () => {
+        context.edited();
+        refresh();
+    };
+
+    /**
      * A built-in item is a clock, so `bar` is not offered — a bar wants a
      * number and would draw permanently empty. `panelConfig.ts` refuses it
      * outright, which is what covers a hand-edited file.
@@ -305,7 +332,7 @@ const displayFields = (entity, context, refresh) => {
         value: display.segmentId,
         onInput: event => {
             display.segmentId = Number(event.target.value);
-            context.changed();
+            edited();
         },
     });
 
@@ -314,7 +341,7 @@ const displayFields = (entity, context, refresh) => {
         value: toHex(display.color),
         onInput: event => {
             display.color = fromHex(event.target.value);
-            context.changed();
+            edited();
         },
     });
 
@@ -331,20 +358,14 @@ const displayFields = (entity, context, refresh) => {
             value: toHex(display.trackColor),
             onInput: event => {
                 display.trackColor = fromHex(event.target.value);
-                context.changed();
+                edited();
             },
         })));
     } else {
-        fields.push(field(`scroll speed — ${display.speed}`, make('input', {
-            type: 'range',
-            min: '0',
-            max: '255',
-            value: display.speed,
-            onInput: event => {
-                display.speed = Number(event.target.value);
-                context.changed();
-            },
-        })));
+        fields.push(sliderField('scroll speed', display.speed, value => {
+            display.speed = value;
+            edited();
+        }));
         fields.push(field('prefix', make('input', {
             type: 'text',
             value: display.prefix ?? '',
@@ -356,7 +377,7 @@ const displayFields = (entity, context, refresh) => {
                 } else {
                     display.prefix = text;
                 }
-                context.changed();
+                edited();
             },
         })));
     }
@@ -549,7 +570,7 @@ export const renderDisplay = (root, context) => {
                 class: 'empty',
                 textContent: 'No entities yet — add one on the Entities tab first.',
             }),
-        ]), outputCard(context));
+        ]), outputCard(context, () => {}));
         return;
     }
 
@@ -573,7 +594,7 @@ export const renderDisplay = (root, context) => {
     ]);
 
     root.append(
-        make('div', { style: 'display:grid;gap:20px' }, [left, outputCard(context)]),
+        make('div', { style: 'display:grid;gap:20px' }, [left, outputCard(context, refresh)]),
         node,
     );
 };
