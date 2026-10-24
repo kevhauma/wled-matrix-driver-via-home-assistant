@@ -304,5 +304,5 @@ export const startServer = (
         }
     };
 
-    return Deno.serve({ port: config.port, hostname: '127.0.0.1', onListen: () => {} }, handle);
+    return Deno.serve({ port: config.port, hostname: '0.0.0.0', onListen: () => {} }, handle);
 };
