@@ -1,4 +1,4 @@
-import { BuiltinId, formatsFor, isBuiltinId } from './builtins.ts';
+import { BuiltinId, formatsFor, isBuiltinId, isTimeZone } from './builtins.ts';
 import { Config } from './config.ts';
 import {
     EntityIds,
@@ -25,17 +25,23 @@ export type PanelOutputConfig = {
     /** Empty means print the payload rather than posting it. */
     wledIp: string,
     brightness: number,
+    /**
+     * An IANA name like `Europe/Brussels`: what the built-in clock and a
+     * flow's time window read in. Empty means the host's own zone, which a
+     * container or a fresh Pi usually has as UTC.
+     */
+    timeZone: string,
 };
 
 export type PanelConfig = {
-    version: 3,
+    version: 4,
     output: PanelOutputConfig,
     entities: PanelEntity[],
     flow: FlowRule[],
 };
 
 /** `configUpgrade.ts` brings an older file up to this before it is parsed. */
-export const CONFIG_VERSION = 3;
+export const CONFIG_VERSION = 4;
 
 /**
  * Reproduces exactly what `whatToShow` used to do in code: the television
@@ -89,7 +95,7 @@ export const defaultPanelConfig = (config: Config): PanelConfig => {
     const flow = defaultFlow(config.rotateSeconds);
     return {
         version: CONFIG_VERSION,
-        output: { wledIp: config.wled.ip, brightness: config.wled.brightness },
+        output: { wledIp: config.wled.ip, brightness: config.wled.brightness, timeZone: '' },
         entities: [...PANEL_ENTITIES],
         flow,
     };
@@ -167,6 +173,14 @@ const asOneOf = <T extends string>(value: unknown, path: string, allowed: readon
         throw fail(path, `one of ${list}`, value);
     }
     return found;
+};
+
+const asTimeZone = (value: unknown, path: string): string => {
+    const text = asString(value, path);
+    if (text === '' || isTimeZone(text)) {
+        return text;
+    }
+    throw fail(path, 'an IANA timezone like Europe/Brussels, or empty for the host’s own', value);
 };
 
 const asColor = (value: unknown, path: string): RGBColor => {
@@ -629,6 +643,7 @@ export const parsePanelConfig = (value: unknown): PanelConfig => {
     const output = asRecord(record.output, 'config.output');
     const wledIp = asHost(output.wledIp, 'config.output.wledIp');
     const brightness = asNumberInRange(output.brightness, 'config.output.brightness', 0, 255);
+    const timeZone = asTimeZone(output.timeZone, 'config.output.timeZone');
 
     const rawEntities = asArray(record.entities, 'config.entities');
     const entities = rawEntities.map((entity, index) => {
@@ -656,5 +671,5 @@ export const parsePanelConfig = (value: unknown): PanelConfig => {
 
     checkFlowDisplays(flow, entityIds);
 
-    return { version: CONFIG_VERSION, output: { wledIp, brightness }, entities, flow };
+    return { version: CONFIG_VERSION, output: { wledIp, brightness, timeZone }, entities, flow };
 };

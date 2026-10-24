@@ -45,7 +45,7 @@ const play = (flow: readonly FlowRule[], moments: readonly Moment[]): Decision[]
             const state = reading.kind === 'unavailable' ? 'unavailable' : 'on';
             states.set(entityId, state);
         }
-        const outcome = decidePanel({ flow, readings, states, atMilliseconds: moment.at, loops });
+        const outcome = decidePanel({ flow, readings, states, atMilliseconds: moment.at, timeZone: '', loops });
         loops = outcome.loops;
         return outcome.decision;
     });
@@ -210,6 +210,21 @@ Deno.test('a time window that ends before it starts runs past midnight', () => {
     const shown = shownAt(flow, [at(21, 59), at(22, 0), at(3, 0), at(6, 59), at(7, 0), at(12, 0)]);
 
     assertSame(shown, 'entity nothing nothing nothing entity entity', 'the night, across the date');
+});
+
+Deno.test('a time window is read in the panel’s timezone, not the host’s', () => {
+    const flow = nightFlow('00:00', '08:00');
+    // 23:00 UTC is 01:00 in Brussels in October, and 19:00 in New York.
+    const lateUtc = Date.UTC(2026, 9, 22, 23, 0);
+    const decideIn = (timeZone: string): string => {
+        const readings = new Map([[TEMP, WARM]]);
+        const states = new Map<string, string>();
+        const outcome = decidePanel({ flow, readings, states, atMilliseconds: lateUtc, timeZone, loops: new Map() });
+        return outcome.decision.show;
+    };
+
+    assertSame(decideIn('Europe/Brussels'), 'nothing', 'night in Brussels');
+    assertSame(decideIn('America/New_York'), 'entity', 'evening in New York');
 });
 
 const titleView = { style: 'text' as const, segmentId: 0, color: [255, 255, 255] as [number, number, number], speed: 80, text: '{{title}}' };

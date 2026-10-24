@@ -1,3 +1,4 @@
+import { toWallClock } from '../builtins.ts';
 import { builtinItems, DEFAULT_LIMIT, LibraryItem, MAX_LIMIT, selectLibrary, toFilters, toLibraryItem, toLimit } from '../library.ts';
 
 /**
@@ -22,7 +23,7 @@ const entity = (entityId: string, friendlyName = '', deviceClass = ''): LibraryI
     source: 'homeAssistant',
 });
 
-const AT = new Date(2026, 9, 22, 14, 32, 5);
+const AT = toWallClock(new Date(2026, 9, 22, 14, 32, 5), '');
 
 Deno.test('a page says how many matched and how many there are in all', () => {
     const items = [entity('sensor.a'), entity('sensor.b'), entity('light.c')];

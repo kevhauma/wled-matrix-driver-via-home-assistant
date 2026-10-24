@@ -79,6 +79,37 @@ const sliderField = (name, value, onValue) => {
     return make('label', { class: 'field' }, [caption, slider]);
 };
 
+/**
+ * What the built-in clock and a flow's time window read in. The list is the
+ * browser's, which is the same ICU list the server checks against in all but
+ * the newest zones — and a saved zone missing from it is added rather than
+ * silently shown as something else.
+ */
+const timeZoneSelect = context => {
+    const { output } = context.config;
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // The browser's list leaves out UTC, which is a zone the server accepts.
+    const zones = ['UTC', ...Intl.supportedValuesOf('timeZone').filter(zone => zone !== 'UTC')];
+    const listed = zones.includes(output.timeZone) || output.timeZone === ''
+        ? zones
+        : [output.timeZone, ...zones];
+
+    const choices = [
+        option('', 'the host’s own', output.timeZone === ''),
+        ...listed.map(zone => {
+            const text = zone === here ? `${zone} — this browser` : zone;
+            return option(zone, text, zone === output.timeZone);
+        }),
+    ];
+
+    return make('select', {
+        onChange: event => {
+            output.timeZone = event.target.value;
+            context.changed();
+        },
+    }, choices);
+};
+
 const outputCard = (context, refresh) => {
     const { config } = context;
 
@@ -102,6 +133,7 @@ const outputCard = (context, refresh) => {
         make('div', { class: 'fields' }, [
             brightness,
             field('WLED address', ip),
+            field('timezone', timeZoneSelect(context)),
         ]),
         make('p', {
             class: 'caveat',

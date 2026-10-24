@@ -194,7 +194,10 @@ with an example of what it says right now:
 
 The value is **this machine's clock**, rendered here and sent as the segment
 name — not WLED's own. The device's NTP and timezone may be anything; the host
-running this is the one you can check. The payload diff means a clock costs one
+running this is the one you can check. It is read in `output.timeZone` (the
+**timezone** field on the editor's Output card), an IANA name like
+`Europe/Brussels`; empty means the host's own, which on a container or a fresh
+Pi is usually UTC. A flow's time window is read in the same zone. The payload diff means a clock costs one
 POST a minute rather than one a second. (If you would rather the firmware did
 it, that is already reachable: a `custom` display can put WLED's own `#HHMM` in
 a segment name. Nothing here will preview it.)
@@ -362,7 +365,8 @@ Configuration:
 - **An older `panel.config.json` is upgraded as it is read, and rewritten only
   by the next save.** `configUpgrade.ts` takes it one version at a time — 1 to 2
   folded a text display's `prefix` into its `text` template, 2 to 3 made a
-  loop's members objects with ids — and the start-up
+  loop's members objects with ids, 3 to 4 added an empty `output.timeZone` —
+  and the start-up
   log says when it did. Until you save, the file on disk is still the old
   version, so it can be read by the old code.
 - **A display set in the flow is a copy, not a link.** It starts as the
@@ -398,9 +402,10 @@ Configuration:
 - **A time window's `from` and `to` cannot be equal.** That could mean an empty
   window or the whole day; a rule that should always apply has no conditions.
 - **The clock is the host's, so the panel is only as right as this machine.** A
-  wrong timezone on the box running this is a wrong clock on the panel, and
-  nothing in the editor can tell. The formats are written out rather than taken
-  from `toLocaleString`, deliberately: that would make the panel depend on the
+  wrong clock on the box running this is a wrong clock on the panel, and
+  nothing in the editor can tell. Its timezone is the host's only while
+  `output.timeZone` is empty — set it rather than relying on the box's. The
+  formats are written out rather than taken from `toLocaleString`, deliberately: that would make the panel depend on the
   host locale and on which ICU the Deno build carries, and recent ICU puts a
   narrow no-break space before `PM` — which `wled.ts` then strips, so `2:32 PM`
   would reach the device as `2:32PM` on one machine and `2:32 PM` on another.
@@ -590,8 +595,11 @@ Home Assistant's compressed WebSocket format:
   built-in's `otherwise`
 - an old file: version 2's loop entity ids becoming members, numbered only
   where one repeats; version 1 upgraded and then passing the current validator, a
-  `prefix` becoming the text in front of `{{value}}`, and a current file passed
-  through untouched
+  `prefix` becoming the text in front of `{{value}}`, version 3 getting the
+  host's own timezone, and a current file passed through untouched
+- the timezone: one instant read in Brussels and New York landing on different
+  hours and dates, midnight as `00` rather than `24`, a time window deciding
+  differently in each, and a misspelt zone refused by name
 - the payloads: `ix` carrying the percentage, the bar's `m12`/`tp`/`rY` going
   out and text's `tp` going out *off*, text in the segment name, other
   segments switched off rather than emptied, the text fitting and ASCII rules,

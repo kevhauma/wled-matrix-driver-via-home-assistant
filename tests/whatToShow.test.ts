@@ -40,6 +40,7 @@ const decide = (
         readings: new Map(Object.entries(readings)),
         states,
         atMilliseconds,
+        timeZone: '',
         loops: new Map(),
     });
     return outcome.decision;
@@ -58,7 +59,7 @@ const decideOverTime = (
     let loops: ReadonlyMap<string, LoopState> = new Map();
 
     return moments.map(atMilliseconds => {
-        const outcome = decidePanel({ flow: FLOW, readings: parsed, states, atMilliseconds, loops });
+        const outcome = decidePanel({ flow: FLOW, readings: parsed, states, atMilliseconds, timeZone: '', loops });
         loops = outcome.loops;
         return outcome.decision;
     });

@@ -1,4 +1,13 @@
-import { BuiltinIds, defaultFormatFor, describeBuiltins, formatsFor, isBuiltinId, renderBuiltin } from '../builtins.ts';
+import {
+    BuiltinIds,
+    defaultFormatFor,
+    describeBuiltins,
+    formatsFor,
+    isBuiltinId,
+    isTimeZone,
+    renderBuiltin,
+    toWallClock,
+} from '../builtins.ts';
 import { readBuiltin } from '../readings.ts';
 import { toWledPayload } from '../wled.ts';
 import { PanelEntity } from '../entities.ts';
@@ -20,13 +29,13 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 /** A local-time instant: Thursday 22 October 2026, 14:32:05. */
-const AFTERNOON = new Date(2026, 9, 22, 14, 32, 5);
+const AFTERNOON = toWallClock(new Date(2026, 9, 22, 14, 32, 5), '');
 /** The same date at 09:07:00, for the 12-hour and padding cases. */
-const MORNING = new Date(2026, 9, 22, 9, 7, 0);
+const MORNING = toWallClock(new Date(2026, 9, 22, 9, 7, 0), '');
 /** Midnight, which is the hour a 12-hour clock gets wrong. */
-const MIDNIGHT = new Date(2026, 9, 22, 0, 15, 0);
+const MIDNIGHT = toWallClock(new Date(2026, 9, 22, 0, 15, 0), '');
 /** Noon, the other one. */
-const NOON = new Date(2026, 9, 22, 12, 15, 0);
+const NOON = toWallClock(new Date(2026, 9, 22, 12, 15, 0), '');
 
 Deno.test('the time formats render as the editor advertises them', () => {
     assertSame(renderBuiltin('hour24', AFTERNOON), '14:32', 'afternoon, 24 hour');
@@ -46,6 +55,35 @@ Deno.test('the date formats render as the editor advertises them', () => {
     assertSame(renderBuiltin('dayMonth', AFTERNOON), '22 Oct', 'day and month');
     assertSame(renderBuiltin('dayMonthNumeric', AFTERNOON), '22/10', 'numeric, padded');
     assertSame(renderBuiltin('isoDate', AFTERNOON), '2026-10-22', 'ISO');
+});
+
+/** An absolute instant, so these hold wherever the tests run: 22:30 UTC. */
+const LATE_UTC = new Date(Date.UTC(2026, 9, 22, 22, 30, 0));
+
+Deno.test('a timezone moves the clock and, past midnight, the date', () => {
+    const brussels = toWallClock(LATE_UTC, 'Europe/Brussels');
+    const newYork = toWallClock(LATE_UTC, 'America/New_York');
+
+    assertSame(renderBuiltin('hour24', brussels), '00:30', 'Brussels is two hours ahead in October');
+    assertSame(renderBuiltin('weekdayDayMonth', brussels), 'Fri 23 Oct', 'and already tomorrow');
+    assertSame(renderBuiltin('hour24', newYork), '18:30', 'New York is four behind');
+    assertSame(renderBuiltin('isoDate', newYork), '2026-10-22', 'and still today');
+});
+
+Deno.test('midnight in a zone is 00, not the 24 some ICU builds answer with', () => {
+    const midnight = new Date(Date.UTC(2026, 9, 22, 22, 0, 0));
+
+    const clock = toWallClock(midnight, 'Europe/Brussels');
+
+    assertSame(renderBuiltin('hour24', clock), '00:00', '24 hour');
+    assertSame(renderBuiltin('hour12', clock), '12:00am', '12 hour');
+});
+
+Deno.test('a timezone is an IANA name, and nothing else is', () => {
+    assertSame(isTimeZone('Europe/Brussels'), true, 'a real zone');
+    assertSame(isTimeZone('UTC'), true, 'UTC');
+    assertSame(isTimeZone('Europe/Brusels'), false, 'a typo');
+    assertSame(isTimeZone('Brussels'), false, 'a city alone');
 });
 
 /**

@@ -1,4 +1,4 @@
-import { defaultFormatFor, isBuiltinId } from './builtins.ts';
+import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
 import { Config } from './config.ts';
 import { displaysInFlow, LoopState } from './flow.ts';
 import { EntityLookup } from './homeAssistant/entityStore.ts';
@@ -115,7 +115,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
     const readAll = (): { readings: Map<string, Reading>, states: Map<string, string> } => {
         const readings = new Map<string, Reading>();
         const states = new Map<string, string>();
-        const now = new Date();
+        const now = toWallClock(new Date(), panel.output.timeZone);
 
         for (const entity of panel.entities) {
             if (isBuiltinId(entity.entityId)) {
@@ -158,6 +158,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
             readings,
             states,
             atMilliseconds: Date.now(),
+            timeZone: panel.output.timeZone,
             loops,
         });
         const decision = outcome.decision;

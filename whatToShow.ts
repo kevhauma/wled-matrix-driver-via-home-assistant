@@ -1,3 +1,4 @@
+import { toWallClock, WallClock } from './builtins.ts';
 import { WledDisplay } from './entities.ts';
 import { Condition, FlowRule, LoopMember, LoopState, TimeCondition } from './flow.ts';
 import { Reading } from './readings.ts';
@@ -39,6 +40,8 @@ export type PanelInput = {
      */
     states: ReadonlyMap<string, string>,
     atMilliseconds: number,
+    /** What a time window is read in. Empty means the host's own zone. */
+    timeZone: string,
     /** Where each loop rule had got to, keyed by `FlowRule.id`. */
     loops: ReadonlyMap<string, LoopState>,
 };
@@ -78,12 +81,11 @@ const toMinutes = (time: string): number => {
 };
 
 /**
- * Local time, because a window is written as a wall-clock time — which makes
- * the panel as right as this host's timezone, exactly as the clock is.
+ * The panel's time, because a window is written as a wall-clock time — read in
+ * the same zone as the clock it sits beside.
  */
-const isWithinWindow = (condition: TimeCondition, atMilliseconds: number): boolean => {
-    const at = new Date(atMilliseconds);
-    const now = at.getHours() * 60 + at.getMinutes();
+const isWithinWindow = (condition: TimeCondition, clock: WallClock): boolean => {
+    const now = clock.hours * 60 + clock.minutes;
     const start = toMinutes(condition.from);
     const end = toMinutes(condition.to);
     if (start < end) {
@@ -97,10 +99,10 @@ const matchesCondition = (
     condition: Condition,
     readings: ReadonlyMap<string, Reading>,
     states: ReadonlyMap<string, string>,
-    atMilliseconds: number,
+    clock: WallClock,
 ): boolean => {
     if (condition.test === 'timeBetween') {
-        return isWithinWindow(condition, atMilliseconds);
+        return isWithinWindow(condition, clock);
     }
 
     const reading = readings.get(condition.entityId);
@@ -136,14 +138,14 @@ const matchesRule = (
     rule: FlowRule,
     readings: ReadonlyMap<string, Reading>,
     states: ReadonlyMap<string, string>,
-    atMilliseconds: number,
+    clock: WallClock,
 ): boolean => {
     if (rule.conditions.length === 0) {
         return true;
     }
 
     const results = rule.conditions.map(condition => {
-        const matched = matchesCondition(condition, readings, states, atMilliseconds);
+        const matched = matchesCondition(condition, readings, states, clock);
         return matched;
     });
 
@@ -199,9 +201,10 @@ const advanceLoop = (
 };
 
 export const decidePanel = (
-    { flow, readings, states, atMilliseconds, loops }: PanelInput,
+    { flow, readings, states, atMilliseconds, timeZone, loops }: PanelInput,
 ): PanelOutput => {
     const nextLoops = new Map<string, LoopState>();
+    const clock = toWallClock(new Date(atMilliseconds), timeZone);
 
     /**
      * Every loop that did not win keeps exactly where it was, only marked as
@@ -222,7 +225,7 @@ export const decidePanel = (
     };
 
     for (const rule of flow) {
-        const matched = matchesRule(rule, readings, states, atMilliseconds);
+        const matched = matchesRule(rule, readings, states, clock);
         if (!matched) {
             continue;
         }

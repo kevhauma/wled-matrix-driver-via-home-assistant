@@ -59,9 +59,19 @@ const toVersion3 = (config: Json): Json => {
     return { ...config, version: 3, flow: upgraded };
 };
 
+/**
+ * Version 4 gave the output a timezone. Empty is the host's own, which is
+ * what every older file was already getting.
+ */
+const toVersion4 = (config: Json): Json => {
+    const output = isRecord(config.output) ? config.output : {};
+    return { ...config, version: 4, output: { ...output, timeZone: '' } };
+};
+
 const STEPS: Record<number, (config: Json) => Json> = {
     1: toVersion2,
     2: toVersion3,
+    3: toVersion4,
 };
 
 export type Upgraded = {

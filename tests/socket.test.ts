@@ -68,7 +68,7 @@ const decideFrom = (lookup: EntityLookup) => {
         states.set(entity.entityId, state?.state ?? '');
     }
     const flow = defaultFlow(5);
-    const outcome = decidePanel({ flow, readings, states, atMilliseconds: 0, loops: new Map() });
+    const outcome = decidePanel({ flow, readings, states, atMilliseconds: 0, timeZone: '', loops: new Map() });
     return outcome.decision;
 };
 

@@ -1,4 +1,4 @@
-import { defaultFormatFor, isBuiltinId } from './builtins.ts';
+import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
 import { PanelEntity, PlainDisplay, WledDisplay } from './entities.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
 import { readBuiltin, readEntity, Reading } from './readings.ts';
@@ -119,12 +119,12 @@ export type PreviewSample = {
  * ignored and the preview shows the real thing — which is also the only way to
  * see what changing the format does.
  */
-const previewReading = (entity: PanelEntity, sample: PreviewSample): Reading => {
+const previewReading = (entity: PanelEntity, sample: PreviewSample, timeZone: string): Reading => {
     const entityId = entity.entityId;
 
     if (isBuiltinId(entityId)) {
         const format = entity.format ?? defaultFormatFor(entityId);
-        const now = new Date();
+        const now = toWallClock(new Date(), timeZone);
         const reading = readBuiltin(format, now);
         return reading;
     }
@@ -150,6 +150,8 @@ export type PreviewInput = {
     /** Only a media player has one, and only then is it asked for. */
     sampleArtist: string,
     brightness: number,
+    /** What a built-in's clock reads in. Empty means the host's own zone. */
+    timeZone: string,
     /**
      * What the running service last read for every entity. The one being
      * previewed is replaced by the sample; the rest are what a placeholder
@@ -170,6 +172,7 @@ export const toPreview = (
         unit,
         sampleArtist,
         brightness,
+        timeZone,
         liveReadings,
     }: PreviewInput,
 ): Preview => {
@@ -180,7 +183,7 @@ export const toPreview = (
 
     const isBuiltin = isBuiltinId(entityId);
     const sample = { value: sampleValue, unit, artist: sampleArtist };
-    const reading = previewReading(entity, sample);
+    const reading = previewReading(entity, sample, timeZone);
     const readings = new Map(liveReadings);
     readings.set(entityId, reading);
     const others = toEntityValues(readings);

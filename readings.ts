@@ -1,4 +1,4 @@
-import { BuiltinFormat, renderBuiltin } from './builtins.ts';
+import { BuiltinFormat, renderBuiltin, WallClock } from './builtins.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
 import { ReadingKind, ReadingKinds } from './entities.ts';
 
@@ -85,7 +85,7 @@ export const readEntity = (entity: EntityState | undefined, kind: ReadingKind): 
  * Never `unavailable`, which is what makes a clock a sound `OTHERWISE` target
  * and a rotation member that cannot drop out.
  */
-export const readBuiltin = (format: BuiltinFormat, at: Date): Reading => {
+export const readBuiltin = (format: BuiltinFormat, at: WallClock): Reading => {
     const text = renderBuiltin(format, at);
     return { kind: 'text', candidates: [text], isPlaying: false };
 };

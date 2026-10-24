@@ -1,5 +1,5 @@
 import { Bridge } from './bridge.ts';
-import { describeBuiltins } from './builtins.ts';
+import { describeBuiltins, toWallClock } from './builtins.ts';
 import { Config } from './config.ts';
 import { savePanelConfig } from './configStore.ts';
 import { fetchEntityStates, RestEntityState } from './homeAssistant/states.ts';
@@ -175,7 +175,7 @@ export const startServer = (
     const listLibrary = async (url: URL): Promise<Response> => {
         const filters = toFilters(url.searchParams.get('q') ?? '');
         const limit = toLimit(url.searchParams.get('limit'));
-        const builtins = builtinItems(new Date());
+        const builtins = builtinItems(toWallClock(new Date(), panel().output.timeZone));
 
         const { token } = config.homeAssistant;
         if (!token) {
@@ -235,6 +235,7 @@ export const startServer = (
                 unit,
                 sampleArtist,
                 brightness: draft.output.brightness,
+                timeZone: draft.output.timeZone,
                 liveReadings: new Map(Object.entries(bridge.snapshot().readings)),
             });
             return jsonResponse(preview);
@@ -271,7 +272,7 @@ export const startServer = (
          * the editor's list of formats cannot drift from `builtins.ts`.
          */
         if (url.pathname === '/api/builtins' && request.method === 'GET') {
-            const described = describeBuiltins(new Date());
+            const described = describeBuiltins(toWallClock(new Date(), panel().output.timeZone));
             return jsonResponse({ items: described });
         }
 

@@ -1,4 +1,4 @@
-import { BuiltinFormat, defaultFormatFor, describeBuiltins, renderBuiltin } from './builtins.ts';
+import { BuiltinFormat, defaultFormatFor, describeBuiltins, renderBuiltin, WallClock } from './builtins.ts';
 import { RestEntityState } from './homeAssistant/states.ts';
 
 /**
@@ -43,7 +43,7 @@ export const toLibraryItem = (entity: RestEntityState): LibraryItem => ({
 });
 
 /** The built-ins as library rows, showing what each would say right now. */
-export const builtinItems = (at: Date): LibraryItem[] =>
+export const builtinItems = (at: WallClock): LibraryItem[] =>
     describeBuiltins(at).map(builtin => {
         const format = defaultFormatFor(builtin.entityId);
         const state = renderBuiltin(format, at);

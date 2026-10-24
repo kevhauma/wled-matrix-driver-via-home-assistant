@@ -58,6 +58,17 @@ Deno.test('a current file is passed through and reported as not upgraded', () =>
     assertSame(again.upgradedFrom, undefined, 'nothing to report');
 });
 
+Deno.test('a version 3 file gets the host’s own timezone, which is what it had', () => {
+    const version3 = { ...VERSION_1, version: 3, entities: [] };
+
+    const { config, upgradedFrom } = upgradePanelConfig(version3);
+    const parsed = parsePanelConfig(config);
+
+    assertSame(upgradedFrom, 3, 'from version 3');
+    assertSame(parsed.output.timeZone, '', 'empty is the host’s zone');
+    assertSame(parsed.output.brightness, 80, 'and the rest of the output kept');
+});
+
 Deno.test('a loop’s entity ids become members, numbered only where one repeats', () => {
     const version2 = {
         ...VERSION_1,

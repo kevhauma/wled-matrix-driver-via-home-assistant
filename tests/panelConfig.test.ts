@@ -13,8 +13,8 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 const withCustomPayload = (payload: unknown): unknown => ({
-    version: 3,
-    output: { wledIp: '', brightness: 80 },
+    version: 4,
+    output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [{ entityId: 'sensor.a', kind: 'percent', display: { style: 'custom', payload } }],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
 });
@@ -111,8 +111,8 @@ Deno.test('a custom display does not need a segmentId or a colour', () => {
 const TEXT_DISPLAY = { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: '{{value}}' };
 
 const withEntity = (entity: unknown): unknown => ({
-    version: 3,
-    output: { wledIp: '', brightness: 80 },
+    version: 4,
+    output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [entity],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
 });
@@ -205,8 +205,8 @@ Deno.test('a custom body is allowed on a built-in, which is the way to compose o
 });
 
 const withCondition = (condition: unknown): unknown => ({
-    version: 3,
-    output: { wledIp: '', brightness: 80 },
+    version: 4,
+    output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [],
     flow: [{ id: 'night', match: 'all', conditions: [condition], action: { do: 'blank' } }],
 });
@@ -219,6 +219,25 @@ const conditionRefusal = (condition: unknown): string => {
     }
     throw new Error('it was accepted, and should not have been');
 };
+
+Deno.test('a timezone is an IANA name or empty, and a typo is refused by name', () => {
+    const withZone = (timeZone: unknown): unknown => ({
+        ...(withCustomPayload(WORKING) as Record<string, unknown>),
+        output: { wledIp: '', brightness: 80, timeZone },
+    });
+
+    assertSame(parsePanelConfig(withZone('Europe/Brussels')).output.timeZone, 'Europe/Brussels', 'a zone');
+    assertSame(parsePanelConfig(withZone('')).output.timeZone, '', 'the host’s own');
+
+    let message = '';
+    try {
+        parsePanelConfig(withZone('Europe/Brusels'));
+    } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+    }
+    assertSame(message.includes('config.output.timeZone'), true, 'names the field');
+    assertSame(message.includes('Europe/Brusels'), true, 'and the value');
+});
 
 Deno.test('a time window is accepted without an entity', () => {
     const parsed = parsePanelConfig(withCondition({ test: 'timeBetween', from: '22:00', to: '07:00' }));
@@ -253,8 +272,8 @@ Deno.test('a text template refuses an unknown placeholder and an empty string', 
 
 Deno.test('a reference to another entity must name one of the panel’s, with a real name', () => {
     const config = (text: string): unknown => ({
-        version: 3,
-        output: { wledIp: '', brightness: 80 },
+        version: 4,
+        output: { wledIp: '', brightness: 80, timeZone: '' },
         entities: [
             { entityId: 'sensor.inside', kind: 'temperature', display: { ...TEXT_DISPLAY, text } },
             { entityId: 'sensor.outside', kind: 'temperature', display: TEXT_DISPLAY },
@@ -281,8 +300,8 @@ Deno.test('a reference to another entity must name one of the panel’s, with a 
 });
 
 const withFlowAction = (action: unknown): unknown => ({
-    version: 3,
-    output: { wledIp: '', brightness: 80 },
+    version: 4,
+    output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [
         { entityId: 'builtin.time', kind: 'text', format: 'hour24', display: TEXT_DISPLAY },
         { entityId: 'sensor.a', kind: 'percent', display: TEXT_DISPLAY },

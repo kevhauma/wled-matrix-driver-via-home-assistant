@@ -1,6 +1,6 @@
 /**
  * The items the panel can show that are not Home Assistant entities: a clock
- * and a date, rendered here from the host's own clock.
+ * and a date, rendered here from the host's own clock in the panel's timezone.
  *
  * They sit in the registry beside the entities and go through the same reading,
  * the same flow and the same payload, so a clock can be a rotation member, an
@@ -92,6 +92,101 @@ const MONTH_NAMES = [
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ] as const;
 
+/**
+ * An instant as it reads on a wall in one place: the fields the formats below
+ * and a flow's time window are written in. Numbered as `Date` numbers them.
+ */
+export type WallClock = {
+    year: number,
+    /** 0 is January. */
+    month: number,
+    day: number,
+    /** 0 is Sunday. */
+    weekday: number,
+    hours: number,
+    minutes: number,
+    seconds: number,
+};
+
+/**
+ * One per zone, because building a formatter is the expensive part and the
+ * bridge asks every tick. Only zones that built are kept, so a typo cannot
+ * grow this.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * `en-US` and numeric fields only, so nothing here is locale text — the
+ * names come from the tables above. `h23` rather than `hour12: false`, which
+ * some ICU builds answer with `24` for the hour after midnight.
+ */
+const formatterFor = (timeZone: string): Intl.DateTimeFormat => {
+    const known = FORMATTERS.get(timeZone);
+    if (known !== undefined) {
+        return known;
+    }
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+    });
+    FORMATTERS.set(timeZone, formatter);
+    return formatter;
+};
+
+/** An IANA name like `Europe/Brussels`, as this Deno's ICU knows them. */
+export const isTimeZone = (value: string): boolean => {
+    try {
+        formatterFor(value);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+/**
+ * An empty zone means the host's own, which is what the panel did before it
+ * had a setting — and still the right answer on a box whose zone is correct.
+ */
+export const toWallClock = (at: Date, timeZone: string): WallClock => {
+    if (timeZone === '') {
+        return {
+            year: at.getFullYear(),
+            month: at.getMonth(),
+            day: at.getDate(),
+            weekday: at.getDay(),
+            hours: at.getHours(),
+            minutes: at.getMinutes(),
+            seconds: at.getSeconds(),
+        };
+    }
+
+    const parts = formatterFor(timeZone).formatToParts(at);
+    const read = (type: Intl.DateTimeFormatPartTypes): number => {
+        const part = parts.find(candidate => candidate.type === type);
+        return Number(part?.value);
+    };
+    const year = read('year');
+    const month = read('month') - 1;
+    const day = read('day');
+    // From the date rather than a `weekday` part, which would be locale text.
+    const weekday = new Date(Date.UTC(year, month, day)).getUTCDay();
+    return {
+        year,
+        month,
+        day,
+        weekday,
+        hours: read('hour'),
+        minutes: read('minute'),
+        seconds: read('second'),
+    };
+};
+
 const padded = (value: number): string => String(value).padStart(2, '0');
 
 /**
@@ -99,9 +194,9 @@ const padded = (value: number): string => String(value).padStart(2, '0');
  * here, and the id is not consulted — a format belonging to the other item is
  * refused by the validator, not resolved here.
  */
-export const renderBuiltin = (format: BuiltinFormat, at: Date): string => {
-    const hours = at.getHours();
-    const minutes = padded(at.getMinutes());
+export const renderBuiltin = (format: BuiltinFormat, at: WallClock): string => {
+    const hours = at.hours;
+    const minutes = padded(at.minutes);
 
     switch (format) {
         case 'hour24':
@@ -112,15 +207,15 @@ export const renderBuiltin = (format: BuiltinFormat, at: Date): string => {
             return `${twelve}:${minutes}${suffix}`;
         }
         case 'hour24Seconds':
-            return `${padded(hours)}:${minutes}:${padded(at.getSeconds())}`;
+            return `${padded(hours)}:${minutes}:${padded(at.seconds)}`;
         case 'weekdayDayMonth':
-            return `${WEEKDAY_NAMES[at.getDay()]} ${at.getDate()} ${MONTH_NAMES[at.getMonth()]}`;
+            return `${WEEKDAY_NAMES[at.weekday]} ${at.day} ${MONTH_NAMES[at.month]}`;
         case 'dayMonth':
-            return `${at.getDate()} ${MONTH_NAMES[at.getMonth()]}`;
+            return `${at.day} ${MONTH_NAMES[at.month]}`;
         case 'dayMonthNumeric':
-            return `${padded(at.getDate())}/${padded(at.getMonth() + 1)}`;
+            return `${padded(at.day)}/${padded(at.month + 1)}`;
         case 'isoDate':
-            return `${at.getFullYear()}-${padded(at.getMonth() + 1)}-${padded(at.getDate())}`;
+            return `${at.year}-${padded(at.month + 1)}-${padded(at.day)}`;
     }
 };
 
@@ -148,7 +243,7 @@ const LABELS: Record<BuiltinId, string> = {
  * browser code, so the formats and their examples cannot drift from the ones
  * above — which is what happened to `template.ts`'s placeholder help.
  */
-export const describeBuiltins = (at: Date): BuiltinDescription[] =>
+export const describeBuiltins = (at: WallClock): BuiltinDescription[] =>
     Object.values(BuiltinIds).map(entityId => {
         const choices = formatsFor(entityId).map(format => {
             const example = renderBuiltin(format, at);
