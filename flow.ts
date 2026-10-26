@@ -68,6 +68,18 @@ export type LoopMember = {
     entityId: string,
     /** Replaces the entity's own display here; absent means use that one. */
     display?: WledDisplay,
+    /**
+     * Only takes its turn while these match; absent means whenever it has a
+     * reading. A member left out this way is treated exactly like one whose
+     * sensor has dropped off.
+     */
+    when?: MemberWhen,
+};
+
+/** A rule's conditions, scoped to one loop member. Never empty. */
+export type MemberWhen = {
+    match: 'all' | 'any',
+    conditions: Condition[],
 };
 
 export type Action =

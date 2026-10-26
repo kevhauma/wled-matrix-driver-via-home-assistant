@@ -13,7 +13,7 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 const withCustomPayload = (payload: unknown): unknown => ({
-    version: 4,
+    version: 5,
     output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [{ entityId: 'sensor.a', kind: 'percent', display: { style: 'custom', payload } }],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
@@ -111,7 +111,7 @@ Deno.test('a custom display does not need a segmentId or a colour', () => {
 const TEXT_DISPLAY = { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: '{{value}}' };
 
 const withEntity = (entity: unknown): unknown => ({
-    version: 4,
+    version: 5,
     output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [entity],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
@@ -205,7 +205,7 @@ Deno.test('a custom body is allowed on a built-in, which is the way to compose o
 });
 
 const withCondition = (condition: unknown): unknown => ({
-    version: 4,
+    version: 5,
     output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [],
     flow: [{ id: 'night', match: 'all', conditions: [condition], action: { do: 'blank' } }],
@@ -272,7 +272,7 @@ Deno.test('a text template refuses an unknown placeholder and an empty string', 
 
 Deno.test('a reference to another entity must name one of the panel’s, with a real name', () => {
     const config = (text: string): unknown => ({
-        version: 4,
+        version: 5,
         output: { wledIp: '', brightness: 80, timeZone: '' },
         entities: [
             { entityId: 'sensor.inside', kind: 'temperature', display: { ...TEXT_DISPLAY, text } },
@@ -300,7 +300,7 @@ Deno.test('a reference to another entity must name one of the panel’s, with a 
 });
 
 const withFlowAction = (action: unknown): unknown => ({
-    version: 4,
+    version: 5,
     output: { wledIp: '', brightness: 80, timeZone: '' },
     entities: [
         { entityId: 'builtin.time', kind: 'text', format: 'hour24', display: TEXT_DISPLAY },
@@ -354,31 +354,31 @@ Deno.test('a display chosen by state survives validation', () => {
     const parsed = parsePanelConfig(withEntity({
         entityId: 'weather.home',
         kind: 'text',
-        display: byState([{ states: ['sunny', 'clear-night'], display: TEXT_DISPLAY }]),
+        display: byState([{ test: 'is', states: ['sunny', 'clear-night'], display: TEXT_DISPLAY }]),
     }));
     const display = parsed.entities[0].display;
 
-    assertSame(display.style === 'byState' && display.cases[0].states.join(','), 'sunny,clear-night', 'kept');
+    assertSame(display.style === 'byState' && display.cases[0].test === 'is' && display.cases[0].states.join(','), 'sunny,clear-night', 'kept');
 });
 
 Deno.test('a display chosen by state refuses a nested choice, a repeated state and a padded one', () => {
     const nested = entityRefusal({
         entityId: 'weather.home',
         kind: 'text',
-        display: byState([{ states: ['sunny'], display: byState([]) }]),
+        display: byState([{ test: 'is', states: ['sunny'], display: byState([]) }]),
     });
     const repeated = entityRefusal({
         entityId: 'weather.home',
         kind: 'text',
         display: byState([
-            { states: ['sunny'], display: TEXT_DISPLAY },
-            { states: ['rainy', 'sunny'], display: TEXT_DISPLAY },
+            { test: 'is', states: ['sunny'], display: TEXT_DISPLAY },
+            { test: 'is', states: ['rainy', 'sunny'], display: TEXT_DISPLAY },
         ]),
     });
     const padded = entityRefusal({
         entityId: 'weather.home',
         kind: 'text',
-        display: byState([{ states: ['sunny '], display: TEXT_DISPLAY }]),
+        display: byState([{ test: 'is', states: ['sunny '], display: TEXT_DISPLAY }]),
     });
 
     assertSame(nested.includes('cannot itself depend on the state'), true, `nested: ${nested}`);
@@ -395,4 +395,56 @@ Deno.test('a built-in’s choice by state cannot hide a bar in a case', () => {
     });
 
     assertSame(message.includes('display.otherwise.style'), true, message);
+});
+
+Deno.test('a case can compare the state as a number, above or below a value', () => {
+    const parsed = parsePanelConfig(withEntity({
+        entityId: 'sensor.a',
+        kind: 'temperature',
+        display: byState([
+            { test: 'above', value: 25, display: TEXT_DISPLAY },
+            { test: 'below', value: 5, display: TEXT_DISPLAY },
+        ]),
+    }));
+    const display = parsed.entities[0].display;
+    const cases = display.style === 'byState' ? display.cases : [];
+
+    assertSame(cases.map(candidate => candidate.test === 'is' ? '' : `${candidate.test} ${candidate.value}`).join(', '), 'above 25, below 5', 'kept');
+});
+
+Deno.test('a numeric case refuses a missing value, a string, and a threshold an earlier case covers', () => {
+    const entity = (cases: unknown) => ({ entityId: 'sensor.a', kind: 'temperature', display: byState(cases) });
+
+    const missing = entityRefusal(entity([{ test: 'above', display: TEXT_DISPLAY }]));
+    const text = entityRefusal(entity([{ test: 'below', value: '5', display: TEXT_DISPLAY }]));
+    const covered = entityRefusal(entity([
+        { test: 'above', value: 20, display: TEXT_DISPLAY },
+        { test: 'above', value: 30, display: TEXT_DISPLAY },
+    ]));
+    const unknown = entityRefusal(entity([{ test: 'equals', states: ['on'], display: TEXT_DISPLAY }]));
+
+    assertSame(missing.includes('cases[0].value must be a number'), true, `missing: ${missing}`);
+    assertSame(text.includes('cases[0].value must be a number'), true, `text: ${text}`);
+    assertSame(covered.includes('cases[1] is above 30, which'), true, `covered: ${covered}`);
+    assertSame(unknown.includes('cases[0].test must be one of is, above, below'), true, `unknown: ${unknown}`);
+});
+
+Deno.test('a loop member’s when survives validation, and an empty one is refused', () => {
+    const when = { match: 'any', conditions: [{ test: 'timeBetween', from: '22:00', to: '07:00' }] };
+    const parsed = parsePanelConfig(withFlowAction({
+        do: 'loop',
+        members: [{ id: 'a', entityId: 'sensor.a', when }],
+        dwellSeconds: 5,
+    }));
+    const action = parsed.flow[0].action;
+    const kept = action.do === 'loop' ? action.members[0].when : undefined;
+
+    const empty = actionRefusal({
+        do: 'loop',
+        members: [{ id: 'a', entityId: 'sensor.a', when: { match: 'all', conditions: [] } }],
+        dwellSeconds: 5,
+    });
+
+    assertSame(JSON.stringify(kept), JSON.stringify(when), 'kept as written');
+    assertSame(empty.includes('members[0].when.conditions must be at least one condition'), true, empty);
 });

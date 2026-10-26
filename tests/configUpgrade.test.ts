@@ -91,3 +91,38 @@ Deno.test('a loop’s entity ids become members, numbered only where one repeats
     assertSame(members[2].entityId, 'sensor.a', 'the entity kept');
     assertSame('entityIds' in flow[0].action, false, 'and the old field gone');
 });
+
+Deno.test('a version 4 case lists states, so it says so, wherever its display is', () => {
+    const weather = {
+        style: 'byState',
+        cases: [{ states: ['sunny'], display: { style: 'text', segmentId: 0, color: [1, 2, 3], speed: 60, text: 'sun' } }],
+        otherwise: { style: 'text', segmentId: 0, color: [1, 2, 3], speed: 60, text: '{{value}}' },
+    };
+    const version4 = {
+        version: 4,
+        output: { wledIp: '', brightness: 80, timeZone: '' },
+        entities: [{ entityId: 'weather.home', kind: 'text', display: weather }],
+        flow: [
+            { id: 'show', match: 'all', conditions: [], action: { do: 'show', entityId: 'weather.home', display: weather } },
+            {
+                id: 'loop',
+                match: 'all',
+                conditions: [],
+                action: { do: 'loop', members: [{ id: 'w', entityId: 'weather.home', display: weather }], dwellSeconds: 5 },
+            },
+        ],
+    };
+
+    const { config, upgradedFrom } = upgradePanelConfig(version4);
+    const parsed = parsePanelConfig(config);
+    const show = parsed.flow[0].action;
+    const loop = parsed.flow[1].action;
+    const testsOf = (display: unknown) =>
+        (display as { cases: { test: string }[] }).cases.map(candidate => candidate.test).join(' ');
+
+    assertSame(upgradedFrom, 4, 'from version 4');
+    assertSame(testsOf(parsed.entities[0].display), 'is', 'the entity’s own');
+    assertSame(show.do === 'show' && testsOf(show.display), 'is', 'a show rule’s');
+    assertSame(loop.do === 'loop' && testsOf(loop.members[0].display), 'is', 'a loop member’s');
+    assertSame('test' in weather.cases[0], false, 'and the file as read is not changed');
+});

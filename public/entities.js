@@ -155,7 +155,10 @@ const usedInFlow = (config, entityId) =>
         const action = rule.action;
         const inShow = action.do === 'show' && action.entityId === entityId;
         const inLoop = action.do === 'loop'
-            && action.members.some(member => member.entityId === entityId);
+            && action.members.some(member =>
+                member.entityId === entityId
+                || member.when?.conditions.some(condition => condition.entityId === entityId)
+            );
         return inCondition || inShow || inLoop;
     });
 
@@ -269,6 +272,16 @@ const removeEntity = (config, entityId) => {
         rule.conditions = rule.conditions.filter(condition => condition.entityId !== entityId);
         if (rule.action.do === 'loop') {
             rule.action.members = rule.action.members.filter(member => member.entityId !== entityId);
+            for (const member of rule.action.members) {
+                if (member.when === undefined) {
+                    continue;
+                }
+                member.when.conditions = member.when.conditions.filter(condition => condition.entityId !== entityId);
+                // An empty `when` is refused on save; absent means the same.
+                if (member.when.conditions.length === 0) {
+                    delete member.when;
+                }
+            }
         }
     }
 

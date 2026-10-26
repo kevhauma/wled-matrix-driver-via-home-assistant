@@ -1,4 +1,4 @@
-import { PanelEntity, PlainDisplay, RGBColor, WledDisplay } from './entities.ts';
+import { matchesStateCase, PanelEntity, PlainDisplay, RGBColor, WledDisplay } from './entities.ts';
 import { Reading, UNAVAILABLE } from './readings.ts';
 import { EntityValues, fillTemplate, PlaceholderValues } from './template.ts';
 import { Decision } from './whatToShow.ts';
@@ -134,13 +134,13 @@ type TextDisplay = Extract<PlainDisplay, { style: 'text' }>;
 
 /**
  * The display that applies for this raw state: a `byState` display's first
- * case listing it, or its `otherwise`. Any other display is its own answer.
+ * case it matches, or its `otherwise`. Any other display is its own answer.
  */
 export const resolveDisplay = (display: WledDisplay, state: string): PlainDisplay => {
     if (display.style !== 'byState') {
         return display;
     }
-    const matched = display.cases.find(candidate => candidate.states.includes(state));
+    const matched = display.cases.find(candidate => matchesStateCase(candidate, state));
     return matched?.display ?? display.otherwise;
 };
 

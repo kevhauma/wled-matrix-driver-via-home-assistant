@@ -326,6 +326,28 @@ const forgetDrafts = key => {
     }
 };
 
+const CASE_TESTS = {
+    is: 'is one of',
+    above: 'is above',
+    below: 'is below',
+};
+
+/**
+ * Switching a case between listing states and comparing a number swaps which
+ * field it carries, so a saved one never holds both — the validator would
+ * refuse the leftover.
+ */
+const setCaseTest = (stateCase, test) => {
+    stateCase.test = test;
+    if (test === 'is') {
+        delete stateCase.value;
+        stateCase.states = stateCase.states ?? [];
+        return;
+    }
+    delete stateCase.states;
+    stateCase.value = stateCase.value ?? 0;
+};
+
 const caseButtons = (view, cases, index, context) => {
     const move = offset => {
         const [moved] = cases.splice(index, 1);
@@ -377,7 +399,7 @@ const byStateFields = (view, context, refresh, headerFields) => {
         const states = make('input', {
             type: 'text',
             class: 'mono',
-            value: stateCase.states.join(', '),
+            value: stateCase.states?.join(', ') ?? '',
             placeholder: 'sunny, clear-night',
             onInput: event => {
                 const parts = event.target.value.split(',').map(part => part.trim());
@@ -387,10 +409,37 @@ const byStateFields = (view, context, refresh, headerFields) => {
             },
         });
 
+        const threshold = make('input', {
+            type: 'number',
+            step: 'any',
+            value: stateCase.value ?? '',
+            placeholder: '0',
+            onInput: event => {
+                // A half-typed number ("-") is kept as it was rather than
+                // saved as 0, which would quietly move the threshold.
+                if (event.target.value === '') {
+                    return;
+                }
+                stateCase.value = Number(event.target.value);
+                context.edited();
+                refresh();
+            },
+        });
+
+        const testPicker = make('select', {
+            // Not shrunk by the field beside it, which would cut "is one of".
+            style: 'width:auto;flex:none',
+            onChange: event => {
+                setCaseTest(stateCase, event.target.value);
+                context.changed();
+            },
+        }, Object.entries(CASE_TESTS).map(([value, text]) => option(value, text, value === stateCase.test)));
+
         return make('div', { class: 'state-case' }, [
             make('div', { class: 'rule-head' }, [
                 make('span', { class: 'keyword', textContent: index === 0 ? 'WHEN' : 'ELSE WHEN' }),
-                make('div', { style: 'flex:1;min-width:160px' }, [states]),
+                testPicker,
+                make('div', { style: 'flex:1;min-width:120px' }, [stateCase.test === 'is' ? states : threshold]),
                 ...caseButtons(view, display.cases, index, context),
             ]),
             displayFields(nestedView(index, stateCase), context, refresh),
@@ -413,7 +462,7 @@ const byStateFields = (view, context, refresh, headerFields) => {
         onClick: () => {
             // Starts as a copy of `otherwise`, so a new case changes nothing
             // until it is edited, rather than drawing a default nobody chose.
-            display.cases.push({ states: [], display: structuredClone(display.otherwise) });
+            display.cases.push({ test: 'is', states: [], display: structuredClone(display.otherwise) });
             context.changed();
         },
     });
@@ -422,8 +471,10 @@ const byStateFields = (view, context, refresh, headerFields) => {
         make('div', { class: 'fields' }, headerFields.filter(Boolean)),
         make('p', {
             class: 'caveat',
-            textContent: 'Read top to bottom: the first case listing the entity’s state is drawn, '
-                + 'compared exactly — “sunny”, “clear-night”, “playing”. A picture for a state is '
+            textContent: 'Read top to bottom: the first case the entity’s state matches is drawn. '
+                + '“is one of” compares exactly — “sunny”, “clear-night”, “playing”; “is above” and '
+                + '“is below” read the state as a number, and one that is not a number matches '
+                + 'neither. A picture for a state is '
                 + 'a custom WLED JSON case drawing pixels with the segment’s "i" field; the '
                 + 'device’s fonts are ASCII only.',
         }),
@@ -596,7 +647,7 @@ const describeChoice = (result, sample) => {
         return '';
     }
     if (result.caseIndex === -1) {
-        return `No case lists “${sample.value}”, so “otherwise” is drawn.`;
+        return `No case matches “${sample.value}”, so “otherwise” is drawn.`;
     }
     return `“${sample.value}” picks case ${result.caseIndex + 1}.`;
 };

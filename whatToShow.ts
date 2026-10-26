@@ -11,8 +11,9 @@ import { Reading } from './readings.ts';
  * in the flow: the first rule whose conditions match decides, and a rule with
  * no conditions always matches, which is how the trailing OTHERWISE block
  * works. A `loop` action is the exception — it declines to match when none of
- * its members has a reading, so a panel of dropped sensors falls through to
- * whatever comes next instead of showing nothing.
+ * its members can take a turn, for want of a reading or because its own `when`
+ * does not match, so a panel of dropped sensors falls through to whatever
+ * comes next instead of showing nothing.
  *
  * Still a pure function, which is the point: a loop's position comes in and the
  * next one goes out, rather than being hidden in a counter here. That is what
@@ -134,32 +135,41 @@ const matchesCondition = (
     }
 };
 
-const matchesRule = (
-    rule: FlowRule,
+/** A rule's conditions, or a loop member's `when`: the same test either way. */
+const matchesConditions = (
+    { match, conditions }: { match: 'all' | 'any', conditions: readonly Condition[] },
     readings: ReadonlyMap<string, Reading>,
     states: ReadonlyMap<string, string>,
     clock: WallClock,
 ): boolean => {
-    if (rule.conditions.length === 0) {
+    if (conditions.length === 0) {
         return true;
     }
 
-    const results = rule.conditions.map(condition => {
+    const results = conditions.map(condition => {
         const matched = matchesCondition(condition, readings, states, clock);
         return matched;
     });
 
-    return rule.match === 'any' ? results.includes(true) : !results.includes(false);
+    return match === 'any' ? results.includes(true) : !results.includes(false);
 };
 
-/** The members of a loop that actually have something to show. */
+/**
+ * The members of a loop that actually have something to show, and whose own
+ * `when`, if they have one, matches now.
+ */
 const availableMembers = (
     members: readonly LoopMember[],
     readings: ReadonlyMap<string, Reading>,
+    states: ReadonlyMap<string, string>,
+    clock: WallClock,
 ): LoopMember[] =>
     members.filter(member => {
         const reading = readings.get(member.entityId);
-        return hasReading(reading);
+        if (!hasReading(reading)) {
+            return false;
+        }
+        return member.when === undefined || matchesConditions(member.when, readings, states, clock);
     });
 
 /**
@@ -225,7 +235,7 @@ export const decidePanel = (
     };
 
     for (const rule of flow) {
-        const matched = matchesRule(rule, readings, states, clock);
+        const matched = matchesConditions(rule, readings, states, clock);
         if (!matched) {
             continue;
         }
@@ -243,7 +253,7 @@ export const decidePanel = (
             return { decision, loops: nextLoops, matchedRuleId: rule.id };
         }
 
-        const members = availableMembers(rule.action.members, readings);
+        const members = availableMembers(rule.action.members, readings, states, clock);
         if (members.length === 0) {
             // Nothing to take a turn, so this rule does not apply at all.
             continue;

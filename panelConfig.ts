@@ -9,7 +9,7 @@ import {
     StateCase,
     WledDisplay,
 } from './entities.ts';
-import { Action, Condition, FlowRule, LoopMember } from './flow.ts';
+import { Action, Condition, FlowRule, LoopMember, MemberWhen } from './flow.ts';
 import { findPlaceholders, isPlaceholder, PLACEHOLDER_NAMES } from './template.ts';
 
 /**
@@ -34,14 +34,14 @@ export type PanelOutputConfig = {
 };
 
 export type PanelConfig = {
-    version: 4,
+    version: 5,
     output: PanelOutputConfig,
     entities: PanelEntity[],
     flow: FlowRule[],
 };
 
 /** `configUpgrade.ts` brings an older file up to this before it is parsed. */
-export const CONFIG_VERSION = 4;
+export const CONFIG_VERSION = 5;
 
 /**
  * Reproduces exactly what `whatToShow` used to do in code: the television
@@ -343,17 +343,40 @@ const asState = (value: unknown, path: string): string => {
     return state;
 };
 
+const STATE_CASE_TESTS = ['is', 'above', 'below'] as const;
+
 /**
- * A state listed by two cases is refused: only the first could ever be drawn,
- * so the second is a mistake that would otherwise look like it worked.
+ * A case that could never be drawn is refused, because it is a mistake that
+ * would otherwise look like it worked: a state listed by an earlier case, or a
+ * threshold an earlier one already covers — `above 30` after `above 20`.
  */
 const parseCases = (value: unknown, path: string): StateCase[] => {
     const rawCases = asArray(value, path);
     const firstCaseFor = new Map<string, number>();
+    const earlierThresholds: { test: 'above' | 'below', value: number, index: number }[] = [];
 
     return rawCases.map((item, index) => {
         const casePath = `${path}[${index}]`;
         const fields = asRecord(item, casePath);
+        const test = asOneOf(fields.test, `${casePath}.test`, STATE_CASE_TESTS);
+
+        if (test !== 'is') {
+            const threshold = asNumberInRange(fields.value, `${casePath}.value`, -Infinity, Infinity);
+            const covering = earlierThresholds.find(earlier =>
+                earlier.test === test
+                && (test === 'above' ? earlier.value <= threshold : earlier.value >= threshold)
+            );
+            if (covering !== undefined) {
+                throw new Error(
+                    `${casePath} is ${test} ${threshold}, which ${path}[${covering.index}] `
+                        + `(${test} ${covering.value}) already draws.`,
+                );
+            }
+            earlierThresholds.push({ test, value: threshold, index });
+            const display = parsePlainDisplay(fields.display, `${casePath}.display`);
+            return { test, value: threshold, display };
+        }
+
         const rawStates = asArray(fields.states, `${casePath}.states`);
         if (rawStates.length === 0) {
             throw fail(`${casePath}.states`, 'at least one state', fields.states);
@@ -374,7 +397,7 @@ const parseCases = (value: unknown, path: string): StateCase[] => {
         }
 
         const display = parsePlainDisplay(fields.display, `${casePath}.display`);
-        return { states, display };
+        return { test, states, display };
     });
 };
 
@@ -540,15 +563,41 @@ const parseCondition = (value: unknown, path: string): Condition => {
     return { entityId, test, value: raw };
 };
 
+const parseConditions = (value: unknown, path: string): Condition[] => {
+    const rawConditions = asArray(value, path);
+    return rawConditions.map((condition, index) => {
+        const parsed = parseCondition(condition, `${path}[${index}]`);
+        return parsed;
+    });
+};
+
+/**
+ * Empty conditions are refused rather than read as "always": absent already
+ * says that, and two spellings of one thing is how a file drifts from what
+ * the editor would have written.
+ */
+const parseMemberWhen = (value: unknown, path: string): MemberWhen => {
+    const record = asRecord(value, path);
+    const match = asOneOf(record.match, `${path}.match`, ['all', 'any'] as const);
+    const conditions = parseConditions(record.conditions, `${path}.conditions`);
+    if (conditions.length === 0) {
+        throw fail(`${path}.conditions`, 'at least one condition — leave out when to always take a turn', record.conditions);
+    }
+    return { match, conditions };
+};
+
 const parseMember = (value: unknown, path: string): LoopMember => {
     const record = asRecord(value, path);
     const id = asNonEmptyString(record.id, `${path}.id`);
     const entityId = asNonEmptyString(record.entityId, `${path}.entityId`);
-    if (record.display === undefined) {
-        return { id, entityId };
+    const member: LoopMember = { id, entityId };
+    if (record.display !== undefined) {
+        member.display = parseDisplay(record.display, `${path}.display`);
     }
-    const display = parseDisplay(record.display, `${path}.display`);
-    return { id, entityId, display };
+    if (record.when !== undefined) {
+        member.when = parseMemberWhen(record.when, `${path}.when`);
+    }
+    return member;
 };
 
 /**
@@ -619,11 +668,7 @@ const parseRule = (value: unknown, path: string): FlowRule => {
     const record = asRecord(value, path);
     const id = asNonEmptyString(record.id, `${path}.id`);
     const match = asOneOf(record.match, `${path}.match`, ['all', 'any'] as const);
-    const rawConditions = asArray(record.conditions, `${path}.conditions`);
-    const conditions = rawConditions.map((condition, index) => {
-        const parsed = parseCondition(condition, `${path}.conditions[${index}]`);
-        return parsed;
-    });
+    const conditions = parseConditions(record.conditions, `${path}.conditions`);
     const action = parseAction(record.action, `${path}.action`);
 
     if (record.label === undefined) {

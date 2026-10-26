@@ -224,6 +224,74 @@ const viewControls = (holder, target, context) => {
     ];
 };
 
+const matchPickerFor = (owner, context) => owner.conditions.length < 2 ? null : make('div', { class: 'row' }, [
+    make('span', { class: 'caveat', textContent: 'match' }),
+    make('select', {
+        style: 'width:auto',
+        onChange: event => {
+            owner.match = event.target.value;
+            context.changed();
+        },
+    }, [
+        option('all', 'all of these', owner.match === 'all'),
+        option('any', 'any of these', owner.match === 'any'),
+    ]),
+]);
+
+const addConditionButtons = (owner, context) => [
+    make('button', {
+        class: 'small',
+        type: 'button',
+        textContent: '+ condition',
+        disabled: context.config.entities.length === 0,
+        onClick: () => {
+            const firstId = context.config.entities[0].entityId;
+            owner.conditions.push({ entityId: firstId, test: 'isPlaying' });
+            context.changed();
+        },
+    }),
+    make('button', {
+        class: 'small',
+        type: 'button',
+        textContent: '+ time window',
+        onClick: () => {
+            owner.conditions.push({ test: 'timeBetween', ...DEFAULT_WINDOW });
+            context.changed();
+        },
+    }),
+];
+
+/**
+ * A member's own conditions: it takes its turn only while they match, and is
+ * otherwise left out exactly as a sensor with no reading is. Removing the last
+ * condition removes `when` itself, because an empty one is refused on save —
+ * absent already means "always".
+ */
+const memberWhenEditor = (member, context) => {
+    if (member.when === undefined) {
+        return null;
+    }
+    const scoped = {
+        ...context,
+        changed: () => {
+            if (member.when.conditions.length === 0) {
+                delete member.when;
+            }
+            context.changed();
+        },
+    };
+    const when = member.when;
+
+    return make('div', { class: 'member-when' }, [
+        make('div', { class: 'row', style: 'margin-bottom:8px' }, [
+            make('span', { class: 'keyword', textContent: 'SHOW WHEN' }),
+        ]),
+        ...when.conditions.map((condition, position) => conditionRow(when, condition, position, scoped)),
+        matchPickerFor(when, scoped),
+        make('div', { class: 'row' }, addConditionButtons(when, scoped)),
+    ]);
+};
+
 const loopEditor = (rule, context) => {
     const { config } = context;
     const action = rule.action;
@@ -232,7 +300,7 @@ const loopEditor = (rule, context) => {
     // artist.
     const ids = config.entities.map(entity => entity.entityId);
 
-    const members = action.members.map((member, index) => make('div', { class: 'loop-member' }, [
+    const members = action.members.map((member, index) => make('div', {}, [make('div', { class: 'loop-member' }, [
         make('span', { class: 'mono', textContent: `${index + 1}. ${member.entityId}` }),
         member.display === undefined ? null : make('span', {
             class: 'badge',
@@ -240,6 +308,21 @@ const loopEditor = (rule, context) => {
             title: `Drawn its own way here: ${summarise(member.display)}`,
         }),
         make('span', { class: 'spacer' }),
+        member.when !== undefined ? null : make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: 'show when…',
+            title: 'Only take a turn while conditions of its own match',
+            onClick: () => {
+                // Starts on the member's own entity having a reading, which is
+                // what it already needed, so adding it changes nothing yet.
+                member.when = {
+                    match: 'all',
+                    conditions: [{ entityId: member.entityId, test: 'isAvailable' }],
+                };
+                context.changed();
+            },
+        }),
         ...viewControls(member, { ruleId: rule.id, memberId: member.id }, context),
         make('button', {
             class: 'small',
@@ -278,7 +361,7 @@ const loopEditor = (rule, context) => {
                 context.changed();
             },
         }),
-    ]));
+    ]), memberWhenEditor(member, context)]));
 
     const adder = ids.length === 0 ? null : make('div', { class: 'loop-member' }, [
         createLocalPicker({
@@ -313,7 +396,8 @@ const loopEditor = (rule, context) => {
             class: 'caveat',
             textContent: 'Interrupted and then resumed, a rotation comes back to the member it '
                 + 'was on and gives it a full turn. “own view…” draws a member differently '
-                + 'here than everywhere else.',
+                + 'here than everywhere else; “show when…” gives it a turn only while '
+                + 'conditions of its own match.',
         }),
     ]);
 };
@@ -457,42 +541,6 @@ const ruleCard = (rule, index, context) => {
         conditionRow(rule, condition, position, context)
     );
 
-    const matchPicker = rule.conditions.length < 2 ? null : make('div', { class: 'row' }, [
-        make('span', { class: 'caveat', textContent: 'match' }),
-        make('select', {
-            style: 'width:auto',
-            onChange: event => {
-                rule.match = event.target.value;
-                context.changed();
-            },
-        }, [
-            option('all', 'all of these', rule.match === 'all'),
-            option('any', 'any of these', rule.match === 'any'),
-        ]),
-    ]);
-
-    const addCondition = make('button', {
-        class: 'small',
-        type: 'button',
-        textContent: '+ condition',
-        disabled: config.entities.length === 0,
-        onClick: () => {
-            const firstId = config.entities[0].entityId;
-            rule.conditions.push({ entityId: firstId, test: 'isPlaying' });
-            context.changed();
-        },
-    });
-
-    const addWindow = make('button', {
-        class: 'small',
-        type: 'button',
-        textContent: '+ time window',
-        onClick: () => {
-            rule.conditions.push({ test: 'timeBetween', ...DEFAULT_WINDOW });
-            context.changed();
-        },
-    });
-
     /**
      * A loop is the one action that can decline, so saying "nothing below is
      * reached" would be wrong for it — that is exactly the case the trailing
@@ -502,8 +550,9 @@ const ruleCard = (rule, index, context) => {
     const noConditions = make('p', {
         class: 'caveat',
         textContent: fallsThrough
-            ? 'No conditions, so this runs whenever at least one of its entities has a '
-                + 'reading. If none does, the rules below it are tried.'
+            ? 'No conditions, so this runs whenever at least one of its members can take a '
+                + 'turn: it has a reading, and its own “show when” matches if it has one. If none '
+                + 'can, the rules below it are tried.'
             : 'No conditions, so this rule always matches — nothing below it is reached.',
     });
 
@@ -511,8 +560,8 @@ const ruleCard = (rule, index, context) => {
         head,
         ...conditions,
         rule.conditions.length === 0 ? noConditions : null,
-        matchPicker,
-        make('div', { class: 'row', style: 'margin-top:8px' }, [addCondition, addWindow]),
+        matchPickerFor(rule, context),
+        make('div', { class: 'row', style: 'margin-top:8px' }, addConditionButtons(rule, context)),
         actionEditor(rule, context),
     ]);
 

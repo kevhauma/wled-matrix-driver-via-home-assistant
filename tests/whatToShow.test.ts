@@ -1,5 +1,5 @@
 import { EntityIds } from '../entities.ts';
-import { LoopState } from '../flow.ts';
+import { FlowRule, LoopState } from '../flow.ts';
 import { defaultFlow } from '../panelConfig.ts';
 import { Reading } from '../readings.ts';
 import { Decision, decidePanel } from '../whatToShow.ts';
@@ -139,4 +139,69 @@ Deno.test('nothing playing and no readings leaves the panel off', () => {
 Deno.test('an empty readings map does not throw', () => {
     const decision = decide({});
     assertSame(decision.show, 'nothing', 'nothing is shown');
+});
+
+/** The default sensors' rotation, with the battery taking a turn only when low. */
+const LOW_BATTERY_FLOW: FlowRule[] = [
+    {
+        id: 'sensors',
+        match: 'all',
+        conditions: [],
+        action: {
+            do: 'loop',
+            members: [
+                { id: 'temperature', entityId: EntityIds.Temperature },
+                {
+                    id: 'battery',
+                    entityId: EntityIds.Battery,
+                    when: { match: 'all', conditions: [{ entityId: EntityIds.Battery, test: 'below', value: 20 }] },
+                },
+            ],
+            dwellSeconds: ROTATE_SECONDS,
+        },
+    },
+    { id: 'idle', match: 'all', conditions: [], action: { do: 'blank' } },
+];
+
+const decideLowBattery = (readings: Record<string, Reading>, moments: readonly number[]): Decision[] => {
+    let loops: ReadonlyMap<string, LoopState> = new Map();
+    return moments.map(atMilliseconds => {
+        const outcome = decidePanel({
+            flow: LOW_BATTERY_FLOW,
+            readings: new Map(Object.entries(readings)),
+            states: toStates(readings),
+            atMilliseconds,
+            timeZone: '',
+            loops,
+        });
+        loops = outcome.loops;
+        return outcome.decision;
+    });
+};
+
+const shownIds = (decisions: Decision[]): string =>
+    decisions.map(decision => decision.show === 'entity' ? decision.entityId : 'nothing').join(' ');
+
+Deno.test('a member whose own when does not match is left out of the rotation', () => {
+    const decisions = decideLowBattery({ [EntityIds.Temperature]: TEMPERATURE, [EntityIds.Battery]: BATTERY }, [
+        0,
+        5_000,
+        10_000,
+    ]);
+
+    const temperature = EntityIds.Temperature;
+    assertSame(shownIds(decisions), `${temperature} ${temperature} ${temperature}`, 'the battery never takes a turn');
+});
+
+Deno.test('a member whose own when matches takes its turn', () => {
+    const low: Reading = { kind: 'percent', percent: 12 };
+    const decisions = decideLowBattery({ [EntityIds.Temperature]: TEMPERATURE, [EntityIds.Battery]: low }, [0, 5_000]);
+
+    assertSame(shownIds(decisions), `${EntityIds.Temperature} ${EntityIds.Battery}`, 'they alternate');
+});
+
+Deno.test('a loop whose every member is left out by its when declines, so the next rule runs', () => {
+    const decisions = decideLowBattery({ [EntityIds.Battery]: BATTERY }, [0]);
+
+    assertSame(shownIds(decisions), 'nothing', 'fell through to idle');
 });

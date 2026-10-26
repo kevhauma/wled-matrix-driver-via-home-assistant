@@ -80,6 +80,18 @@ and showing nothing — and a rotation with *nothing* left declines to match at
 all, so the rules below it are tried. That is why a flow wants a conditionless
 rule at the bottom.
 
+A loop member can also have conditions of its own — "show when…" on the Flow
+tab — and is left out the same way while they do not match. The battery,
+only while it is low:
+
+```json
+{ "id": "battery", "entityId": "sensor.battery_level",
+  "when": { "match": "all", "conditions": [{ "entityId": "sensor.battery_level", "test": "below", "value": 20 }] } }
+```
+
+`when` takes the same conditions a rule does, time windows included. Leave it
+out for a member that always takes its turn; an empty one is refused.
+
 Rotations have memory. Interrupted by music and then resumed, one comes back to
 the member it was on and gives it a full turn, rather than counting the
 interruption against it. That position is not persisted: a restart begins at the
@@ -134,11 +146,18 @@ nothing, not the template's own text around a gap.
 ### A display chosen by state
 
 The fourth style, `'byState'`, is a choice between displays made on the
-entity's **raw state**, compared exactly: the first case listing the state is
-drawn, and `otherwise` when none does. Each case is an ordinary `text`, `bar`
-or `custom` display — a choice inside a choice is refused, because conditions
-belong in the flow. It works anywhere a display does: an entity's own, or one
-set in the flow.
+entity's **raw state**: the first case the state matches is drawn, and
+`otherwise` when none does. A case either lists states, compared exactly —
+`{ "test": "is", "states": ["sunny", "clear-night"] }` — or compares the state
+as a number: `{ "test": "above", "value": 25 }`, `{ "test": "below", "value":
+5 }`, both strict, as the flow's own tests are. A state that is not a number
+(`unavailable`) matches neither, and so falls to a later case or `otherwise`.
+Order the thresholds the way you read them: `above 30` before `above 20`; the
+other way round, the second could never be drawn and is refused.
+
+Each case is an ordinary `text`, `bar` or `custom` display — a choice inside a
+choice is refused, because conditions belong in the flow. It works anywhere a
+display does: an entity's own, or one set in the flow.
 
 A **glyph** is a `custom` case. WLED's fonts are ASCII only, so a picture is
 per-pixel data in the segment's own `i` field — `[start, stop, colour]` fills a
@@ -149,6 +168,7 @@ segment. A sun beside the condition, for `sunny` and `clear-night`:
 {
     "style": "byState",
     "cases": [{
+        "test": "is",
         "states": ["sunny", "clear-night"],
         "display": { "style": "custom", "payload": { "seg": [
             { "id": 1, "start": 0, "stop": 8, "startY": 0, "stopY": 8, "fx": 0, "on": true,
@@ -421,7 +441,8 @@ Configuration:
   path to the placeholder — the Entities tab only checks the flow before
   removing.
 - **A display chosen by state compares the raw state, exactly.** `"Sunny"` is
-  not `sunny`, and a temperature's state is `"18.4"`, not `18C`. A state with
+  not `sunny`, and a temperature's state is `"18.4"`, not `18C` — which is what
+  `above` and `below` read as a number. A state with
   spaces around it is refused, because it could never match; so is one listed
   by two cases, because only the first would ever be drawn. A built-in's state
   is the text it renders.
@@ -592,11 +613,18 @@ Home Assistant's compressed WebSocket format:
   body with its pixels, a state no case lists drawing `otherwise` with the icon
   case's segments switched off, and the validator refusing a choice inside a
   case, a state listed twice, one padded with spaces, and a bar hidden in a
-  built-in's `otherwise`
+  built-in's `otherwise`; a case above or below a number, strictly, with a
+  state that is not a number (or is empty) matching neither, and the validator
+  refusing a missing or quoted value and a threshold an earlier case covers
+- a loop member's own `when`: left out while it does not match, taking its turn
+  while it does, a loop whose every member is left out falling through to the
+  next rule, and the validator keeping one and refusing an empty one
 - an old file: version 2's loop entity ids becoming members, numbered only
   where one repeats; version 1 upgraded and then passing the current validator, a
   `prefix` becoming the text in front of `{{value}}`, version 3 getting the
-  host's own timezone, and a current file passed through untouched
+  host's own timezone, version 4's cases saying they list states — on an
+  entity, a `show` rule and a loop member — and a current file passed through
+  untouched
 - the timezone: one instant read in Brussels and New York landing on different
   hours and dates, midnight as `00` rather than `24`, a time window deciding
   differently in each, and a misspelt zone refused by name

@@ -385,7 +385,7 @@ const weather: PanelEntity = {
     kind: 'text',
     display: {
         style: 'byState',
-        cases: [{ states: ['sunny', 'clear-night'], display: SUN_ICON }],
+        cases: [{ test: 'is', states: ['sunny', 'clear-night'], display: SUN_ICON }],
         otherwise: textDisplay('{{value}}'),
     },
 };
@@ -415,4 +415,23 @@ Deno.test('a state no case lists draws otherwise, and the other case’s segment
     assertSame(segments[0].id === 0 && segments[0].n, 'rainy', 'the otherwise text on segment 0');
     const off = segments.filter(segment => segment.on === false).map(segment => segment.id);
     assertSame(off.join(' '), '1 2', 'the icon case’s segments switched off, so nothing lingers');
+});
+
+Deno.test('a case can pick on the state as a number, and a state that is not one matches neither', () => {
+    const hot = textDisplay('HOT');
+    const cold = textDisplay('COLD');
+    const display = {
+        style: 'byState' as const,
+        cases: [
+            { test: 'above' as const, value: 25, display: hot },
+            { test: 'below' as const, value: 5, display: cold },
+        ],
+        otherwise: textDisplay('{{value}}'),
+    };
+
+    assertSame(resolveDisplay(display, '25.5'), hot, 'above');
+    assertSame(resolveDisplay(display, '25'), display.otherwise, 'strictly above');
+    assertSame(resolveDisplay(display, '-3'), cold, 'below');
+    assertSame(resolveDisplay(display, 'unavailable'), display.otherwise, 'not a number');
+    assertSame(resolveDisplay(display, ''), display.otherwise, 'and empty is not zero');
 });

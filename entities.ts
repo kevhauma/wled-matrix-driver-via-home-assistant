@@ -69,17 +69,50 @@ export type PlainDisplay =
     };
 
 /**
- * One case of a `byState` display: drawn while the entity's raw state is any
- * of `states`, compared exactly — `sunny`, `clear-night`, `playing`.
+ * One case of a `byState` display. `is` is drawn while the entity's raw state
+ * is any of `states`, compared exactly — `sunny`, `clear-night`, `playing`.
+ * `above` and `below` read the raw state as a number and compare it with
+ * `value`, strictly, as the flow's own tests do; a state that is not a number
+ * — `unavailable`, say — matches neither.
  */
-export type StateCase = {
-    states: string[],
-    display: PlainDisplay,
+export type StateCase =
+    | {
+        test: 'is',
+        states: string[],
+        display: PlainDisplay,
+    }
+    | {
+        test: 'above' | 'below',
+        value: number,
+        display: PlainDisplay,
+    };
+
+export type StateCaseTest = StateCase['test'];
+
+/** The raw state as a number, or `undefined` when it is not one. */
+const toStateNumber = (state: string): number | undefined => {
+    // `Number('')` is 0, which would put an empty state below 1.
+    if (state.trim() === '') {
+        return undefined;
+    }
+    const number = Number(state);
+    return Number.isFinite(number) ? number : undefined;
+};
+
+export const matchesStateCase = (stateCase: StateCase, state: string): boolean => {
+    if (stateCase.test === 'is') {
+        return stateCase.states.includes(state);
+    }
+    const number = toStateNumber(state);
+    if (number === undefined) {
+        return false;
+    }
+    return stateCase.test === 'above' ? number > stateCase.value : number < stateCase.value;
 };
 
 /**
  * Either one way of drawing the entity, or a choice between several made on
- * its raw state: the first case listing the state wins, and `otherwise` is
+ * its raw state: the first case the state matches wins, and `otherwise` is
  * drawn when none does. The cases are plain displays — a choice inside a
  * choice would be a second flow, and the flow is where conditions belong.
  *

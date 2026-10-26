@@ -68,10 +68,42 @@ const toVersion4 = (config: Json): Json => {
     return { ...config, version: 4, output: { ...output, timeZone: '' } };
 };
 
+/**
+ * Version 5 let a case of a display chosen by state compare a number as well
+ * as list states, so every case says which it does. Every older case listed
+ * states. Displays sit on entities, `show` rules and loop members.
+ */
+const tagCases = (display: unknown): unknown => {
+    if (!isRecord(display) || display.style !== 'byState' || !Array.isArray(display.cases)) {
+        return display;
+    }
+    const cases = display.cases.map(item => isRecord(item) ? { test: 'is', ...item } : item);
+    return { ...display, cases };
+};
+
+const withTaggedDisplay = (holder: unknown): unknown =>
+    isRecord(holder) && holder.display !== undefined ? { ...holder, display: tagCases(holder.display) } : holder;
+
+const toVersion5 = (config: Json): Json => {
+    const entities = Array.isArray(config.entities) ? config.entities.map(withTaggedDisplay) : config.entities;
+    const flow = Array.isArray(config.flow) ? config.flow.map(rule => {
+        if (!isRecord(rule) || !isRecord(rule.action)) {
+            return rule;
+        }
+        const action = { ...withTaggedDisplay(rule.action) as Json };
+        if (Array.isArray(action.members)) {
+            action.members = action.members.map(withTaggedDisplay);
+        }
+        return { ...rule, action };
+    }) : config.flow;
+    return { ...config, version: 5, entities, flow };
+};
+
 const STEPS: Record<number, (config: Json) => Json> = {
     1: toVersion2,
     2: toVersion3,
     3: toVersion4,
+    4: toVersion5,
 };
 
 export type Upgraded = {
