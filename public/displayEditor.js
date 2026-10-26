@@ -728,8 +728,7 @@ const refreshPreview = async (view, sample, nodes, context) => {
 const CAVEATS = {
     bar: 'The bar is drawn as a proportion of 32 columns, left to right, which is what the '
         + 'device does: a bar segment goes out as a transposed Bar expansion of the Percent '
-        + 'effect. What this cannot know is how tall the segment is, so a bar on part of the '
-        + 'panel is drawn taller here than on the device.',
+        + 'effect, across the whole panel.',
     text: 'Letterforms are approximate: the device uses its own font, and this cannot draw it. '
         + 'The character count, the visible window and whether it scrolls are accurate.',
     custom: 'No mock-up for a custom body: this can draw one scrolling string or one bar across '

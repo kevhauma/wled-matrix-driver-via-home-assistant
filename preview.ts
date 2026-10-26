@@ -4,6 +4,7 @@ import { EntityState } from './homeAssistant/entityStore.ts';
 import { readBuiltin, readEntity, Reading } from './readings.ts';
 import {
     MAX_TEXT_LENGTH,
+    PANEL_COLUMNS,
     resolveDisplay,
     segmentIdsOf,
     toDisplayText,
@@ -23,14 +24,6 @@ import {
  * what actually gets sent. The browser draws the picture; this decides what
  * the picture is of.
  */
-
-/**
- * The panel this project was built for. Segment geometry is not part of the
- * configuration — `wled.ts` only ever names a segment id and lets the device
- * own its bounds — so the preview has to assume a width to say how much text
- * is visible at once.
- */
-export const PANEL_COLUMNS = 32;
 
 export type PreviewWarning =
     | 'strippedNonAscii'
@@ -237,7 +230,8 @@ export const toPreview = (
             if (!ownIds.includes(id)) {
                 continue;
             }
-            const name = typeof fields.n === 'string' ? fields.n : undefined;
+            // Every segment goes out with a name, `''` when its body set none.
+            const name = typeof fields.n === 'string' && fields.n !== '' ? fields.n : undefined;
             const length = name === undefined ? 0 : name.length;
             customSegments.push({ id, name, length, scrolls: length > visible });
         }

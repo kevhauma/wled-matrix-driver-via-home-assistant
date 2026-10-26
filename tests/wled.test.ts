@@ -49,7 +49,7 @@ Deno.test('a percent reading becomes the Percent effect with ix as the value', (
     assertSame(segment.fx, 98, 'Percent effect');
     assertSame(segment.ix, 64, 'ix carries the percentage');
     assertSame(segment.sx, 255, 'sx is the slide speed, not the value');
-    assertSame(segment.n, undefined, 'a bar has no text');
+    assertSame(segment.n, '', 'a bar has no text');
     assertSame(segment.m12, 1, 'expanded as a Bar, a row per 1D pixel');
     assertSame(segment.tp, true, 'transposed, so the rows are columns');
     assertSame(segment.rY, true, 'reversed before the transpose, so it fills from the left');
@@ -240,6 +240,79 @@ Deno.test('a placeholder the reading cannot supply is empty rather than an error
 
     assertSame(segments[0].n, '', 'no title');
     assertSame(segments[1].ix, 0, 'and an empty bar, as a bar display would draw');
+});
+
+/** Fields a view can leave behind on a segment, which the next has to undo. */
+const CARRIED_FIELDS = [
+    'start', 'stop', 'startY', 'stopY', 'grp', 'spc', 'of', 'on', 'bri', 'frz', 'n', 'fx', 'sx', 'ix',
+    'c1', 'c2', 'c3', 'o1', 'o2', 'o3', 'pal', 'm12', 'si', 'cct', 'rev', 'mi', 'rY', 'mY', 'tp', 'col',
+];
+
+const assertSaysEveryField = (segment: Segment, message: string): void => {
+    const missing = CARRIED_FIELDS.filter(field => !(field in segment));
+    assertSame(missing.join(' '), '', `${message} sets every field`);
+};
+
+Deno.test('every drawn segment says every field, so nothing carries over from the view before', () => {
+    const bar = buildPayload(
+        { show: 'entity', entityId: EntityIds.Battery },
+        { [EntityIds.Battery]: { kind: 'percent', percent: 64 } },
+    );
+    const text = buildPayload(
+        { show: 'entity', entityId: EntityIds.Temperature },
+        { [EntityIds.Temperature]: { kind: 'temperature', degrees: 18, unit: 'C' } },
+    );
+    const custom = buildCustomPayload({ kind: 'percent', percent: 10 });
+
+    assertSaysEveryField(firstSegment(bar), 'a bar');
+    assertSaysEveryField(firstSegment(text), 'text');
+    for (const segment of custom.seg as Segment[]) {
+        assertSaysEveryField(segment, `custom segment ${segment.id}`);
+    }
+    assertSame(firstSegment(text).o1, false, 'a bar’s o1 would turn the text into a gradient');
+    assertSame(firstSegment(text).tp, false, 'and its tp would turn it sideways');
+});
+
+Deno.test('a custom segment that names nothing else is reset to the whole panel and the device defaults', () => {
+    const segments = buildCustomPayload({ kind: 'percent', percent: 10 }).seg as Segment[];
+
+    assertSame(segments[0].stop, 32, 'every column');
+    assertSame(segments[0].stopY, 8, 'every row');
+    assertSame(segments[0].frz, false, 'not still frozen by a glyph');
+    assertSame(segments[0].on, true, 'and on, even if the last view switched it off');
+    assertSame(segments[1].c1, 128, 'a slider it does not name is the default');
+    assertSame(segments[1].sx, 128, 'and so is sx, which only the other segment sets');
+});
+
+Deno.test('a custom segment keeps what it names, and a col it only partly fills is completed', () => {
+    const entity: PanelEntity = {
+        ...CUSTOM_ENTITY,
+        display: {
+            style: 'custom',
+            payload: {
+                seg: [
+                    { id: 1, start: 8, stop: 32, fx: 0, col: [[255, 0, 0]] },
+                    { id: 2, start: 0, len: 8 },
+                    { id: 3, on: false },
+                ],
+            },
+        },
+    };
+    const payload = toWledPayload({
+        decision: { show: 'entity', entityId: entity.entityId },
+        entities: [entity],
+        flowDisplays: [],
+        states: new Map(),
+        readings: new Map([[entity.entityId, { kind: 'percent', percent: 5 } as Reading]]),
+        brightness: BRIGHTNESS,
+    });
+    const segments = payload.seg as Segment[];
+
+    assertSame(segments[0].start, 8, 'its own start');
+    assertSame(JSON.stringify(segments[0].col), '[[255,0,0],[0,0,0],[0,0,0]]', 'its colour, and black behind it');
+    assertSame('stop' in segments[1], false, 'no stop, which WLED would read instead of len');
+    assertSame(segments[1].len, 8, 'its len');
+    assertSame(JSON.stringify(segments[2]), '{"id":3,"on":false}', 'a segment it only switches off is left alone');
 });
 
 Deno.test('a decision naming an unregistered entity is a programming error', () => {

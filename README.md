@@ -183,8 +183,9 @@ segment. A sun beside the condition, for `sunny` and `clear-night`:
 }
 ```
 
-The icon and its text use **segments 1 and 2, not 0**, on purpose: see the
-segment geometry entry under "Things that bite".
+The icon and its text use **segments 1 and 2**, sized by their own `start`
+and `stop`. Segment 0 needs no bounds: a segment that names none is the whole
+panel (see "Every view starts from a clean segment", below).
 
 ### The built-in items
 
@@ -283,6 +284,11 @@ What the service still does for you, because a body cannot know it:
 
 - **the other entities' segments are switched off**, appended to whatever `seg`
   you wrote — the same rule every display obeys, for the same reason
+- **every segment you draw starts from a clean one**: each field you leave out
+  goes out at WLED's own default, and the bounds as the whole panel — so
+  nothing the previous view set lingers. Name a field and yours wins; a `col`
+  with fewer than three colours has the rest filled with black. An entry that
+  only says `"on": false` is sent as it is
 - **`on` and `bri` are filled in if you leave them out**, so the editor's
   brightness slider still reaches a custom display; name your own and it wins
 
@@ -453,13 +459,17 @@ Configuration:
 
 WLED:
 
-- **A custom body that sets segment geometry changes it on the device for
-  everyone.** `start`/`stop`/`startY`/`stopY` are segment state, like `tp`:
-  shrink segment 0 to columns 8-31 for a glyph, and every other display on
-  segment 0 then draws in 24 columns. Give a glyph layout segments of its own
-  (1 and 2 in the example) and leave 0 full width. Only the segments being
-  drawn are on — the others are switched off around every payload — so
-  overlapping segments do not fight.
+- **Every view starts from a clean segment, because WLED keeps whatever a body
+  leaves out.** Left alone, a bar's `o1` turned the next text into a gradient,
+  a glyph's `i` left its segment frozen on the old pixels, and a custom body
+  that shrank segment 0 to columns 8-31 left every later display there in 24
+  columns. So every segment drawn goes out with *every* field: its own, and
+  `SEGMENT_RESET`'s for the rest — WLED's defaults for a new segment, with
+  bounds of the whole 32x8 panel. That makes a body's `fxdef` moot: the
+  defaults it loads are overwritten by the ones sent. Top-level keys a custom
+  body sets other than `on` and `bri` (`transition`, `nl`, `mainseg`) are not
+  reset — the device's own value for those is a setting nothing here can read.
+  Only the segments being drawn are on, so overlapping segments do not fight.
 - **A glyph's pixels are unverified against hardware**, like the bar's
   direction: that `i` creates nothing and only paints, that indices run row by
   row across a 2D segment, and that a body naming segments 1 and 2 creates them
@@ -479,8 +489,7 @@ WLED:
   All three go out on every bar segment.
 - **Those flags are segment state, so text has to unset them.** A bar and text
   share segment 0 in the default config, and a transposed Scrolling Text comes
-  out sideways. The text payload pins `tp`, `rY` and `m12` off for the same
-  reason it pins `c2` and `ix`: unset means whatever was there before.
+  out sideways. The clean segment every view starts from has them off.
 - **An empty segment name is not blank.** Scrolling Text falls back to drawing
   the date and time, so a segment is cleared by switching it off.
 - **The segment name caps at 32 characters** (`WLED_MAX_SEGNAME_LEN`) and the
@@ -502,9 +511,7 @@ WLED:
   reproduced in a browser. Letters are drawn one to a fixed cell of the same
   width font 0 uses, so the character count, the visible window and whether a
   string scrolls are right; the letterforms are not. The bar is drawn across 32
-  columns, left to right, which is what the device does whatever the segment's
-  height — but nothing here knows that height, so a bar on part of the panel is
-  drawn taller than it will be. For a
+  columns, left to right, over the whole panel, which is what the device does. For a
   custom body there is **no mock-up at all**, deliberately: it can draw one
   scrolling string or one bar across the whole panel, and a custom body is
   neither. It lists the filled segment names and the finished JSON instead.
@@ -637,6 +644,10 @@ Home Assistant's compressed WebSocket format:
   slider while an absent one takes it, the other entities' segments still
   switched off around it, a segment it shares not being switched off under it,
   and an unavailable reading filling as empty rather than throwing
+- every segment going out clean: a bar, text and a custom body each setting
+  every field a previous view could have left, a custom segment's own fields,
+  bounds, `len` and partial `col` winning over the reset, and a segment it only
+  switches off left as it is
 - the template itself: the type rule above against interpolation, filling at
   any depth, an unknown name left verbatim, and a placeholder in a *key* being
   neither found nor filled

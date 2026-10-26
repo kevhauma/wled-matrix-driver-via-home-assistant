@@ -45,7 +45,7 @@ export const LETTER_WIDTH = 4;
 const Y_OFFSET = 128;
 
 /**
- * The 2D segment flags, pinned on every segment this file draws.
+ * The 2D segment flags a bar sets; text leaves them at `SEGMENT_RESET`'s.
  *
  * `m12` is "Expand 1D FX": 1 is Bar, which paints one whole row per 1D pixel
  * and so fills bottom to top. `tp` transposes the segment, and because
@@ -56,18 +56,81 @@ const Y_OFFSET = 128;
  */
 const BAR_GEOMETRY = { m12: 1, tp: true, rY: true };
 
-/**
- * Text is drawn by a native 2D effect, so of these only the orientation
- * matters — but it matters: a transposed Scrolling Text comes out sideways.
- * Pinned for the same reason `c2` and `ix` are, and for one more on top: a bar
- * and text share segment 0 in the default config, so left unset these are not
- * "whatever the device's own UI last had" but "whatever the other style set".
- */
-const TEXT_GEOMETRY = { m12: 0, tp: false, rY: false };
-
 const BLACK: RGBColor = [0, 0, 0];
 
+/** WLED's `DEFAULT_COLOR`, which a segment created over JSON starts with. */
+const WLED_ORANGE: RGBColor = [255, 160, 0];
+
+/** The panel this project drives: what a segment that names no bounds covers. */
+export const PANEL_COLUMNS = 32;
+export const PANEL_ROWS = 8;
+
+/**
+ * Every field of a segment's state at what a fresh segment has — FX.h's
+ * `Segment` constructor and `DEFAULT_*` — bar its bounds, which are the whole
+ * panel.
+ *
+ * WLED keeps whatever a body leaves out, so without this each view inherits
+ * the one before it: a bar's `o1` turns the next text into a gradient, its
+ * `tp` turns it sideways, a glyph's `i` leaves its segment frozen, a custom
+ * body's bounds shrink every display after it on that segment. Every segment
+ * drawn starts from here, and says only where it differs.
+ *
+ * `frz: false` is read before a body's own `i`, so a glyph still freezes its
+ * segment — but onto a cleared one, not onto the last view's pixels.
+ */
+const SEGMENT_RESET = {
+    on: true,
+    bri: 255,
+    frz: false,
+    n: '',
+    grp: 1,
+    spc: 0,
+    of: 0,
+    fx: 0,
+    sx: 128,
+    ix: 128,
+    c1: 128,
+    c2: 128,
+    c3: 16,
+    o1: false,
+    o2: false,
+    o3: false,
+    pal: 0,
+    m12: 0,
+    si: 0,
+    bm: 0,
+    cct: 127,
+    rev: false,
+    mi: false,
+    rY: false,
+    mY: false,
+    tp: false,
+    col: [WLED_ORANGE, BLACK, BLACK] as unknown[],
+};
+
 export type WledPayload = Record<string, unknown>;
+
+/**
+ * A segment as it goes out: over `SEGMENT_RESET` and the whole panel, with its
+ * own fields winning.
+ *
+ * `col` is merged slot by slot, because WLED leaves a slot the array does not
+ * reach as it was. A segment sized with `len` gets no `stop`, which WLED would
+ * read in its place. An entry that only switches a segment off is left alone:
+ * nothing on it is drawn, and bounds would create a segment the device lacks.
+ */
+const toResetSegment = (segment: WledPayload): WledPayload => {
+    if (segment.on === false) {
+        return segment;
+    }
+    const bounds = 'len' in segment
+        ? { start: 0, startY: 0, stopY: PANEL_ROWS }
+        : { start: 0, stop: PANEL_COLUMNS, startY: 0, stopY: PANEL_ROWS };
+    const ownColors = Array.isArray(segment.col) ? segment.col : [];
+    const col = SEGMENT_RESET.col.map((color, slot) => ownColors[slot] ?? color);
+    return { id: segment.id, ...bounds, ...SEGMENT_RESET, ...segment, col };
+};
 
 /** WLED's own fonts are ASCII only, so anything else comes out as noise. */
 const toAscii = (text: string): string => text.replace(/[^\x20-\x7e]/g, '');
@@ -233,7 +296,7 @@ export const toEntityValues = (readings: ReadonlyMap<string, Reading>): EntityVa
     };
 
 const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues): WledPayload => {
-    const base = { id: display.segmentId, on: true, frz: false, pal: 0 };
+    const base = { id: display.segmentId };
 
     if (display.style === 'bar') {
         // A bar needs a number; anything else would draw a misleading full or
@@ -261,7 +324,6 @@ const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues
         sx: display.speed,
         ix: Y_OFFSET,
         c2: FONT_SIZE_SLIDER,
-        ...TEXT_GEOMETRY,
         col: [display.color, BLACK, display.color],
     };
 };
@@ -328,7 +390,8 @@ export const toWledPayload = (
     if (display.style === 'custom') {
         const values = toPlaceholderValues(reading);
         const filled = fillTemplate(display.payload, values, otherValues) as WledPayload;
-        const own = Array.isArray(filled.seg) ? filled.seg : [];
+        const segments = Array.isArray(filled.seg) ? filled.seg : [];
+        const own = segments.map(segment => toResetSegment(segment as WledPayload));
         /**
          * `on` and `bri` are defaults rather than overrides, so the editor's
          * brightness slider still reaches a custom display — spread after them,
@@ -337,7 +400,8 @@ export const toWledPayload = (
         return { on: true, bri: brightness, ...filled, seg: [...own, ...others] };
     }
 
-    const segment = toSegment(display, reading, otherValues);
+    const drawn = toSegment(display, reading, otherValues);
+    const segment = toResetSegment(drawn);
     return { on: true, bri: brightness, seg: [segment, ...others] };
 };
 
