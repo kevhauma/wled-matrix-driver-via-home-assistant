@@ -1,4 +1,4 @@
-import { card, make, option } from '/dom.js';
+import { card, iconButton, make, option } from '/dom.js';
 import { requestJson } from '/api.js';
 import { createPicker, SEARCH_DEBOUNCE_MILLISECONDS } from '/picker.js';
 
@@ -60,20 +60,38 @@ const toPanelEntity = item => {
 
 /** `50 of 2431 matches` is the whole point of the endpoint's counts. */
 const describePage = (page, source) => {
-    const where = source === 'mock'
-        ? 'the mock source (set HA_TOKEN to list real entities)'
-        : 'Home Assistant';
+    const where = source === 'mock' ? 'the mock source' : 'Home Assistant';
     const hidden = page.matched - page.items.length;
     if (hidden <= 0) {
-        return `${page.matched} of ${page.total} from ${where}.`;
+        return `${page.matched} of ${page.total} from ${where}`;
     }
-    return `${page.items.length} of ${page.matched} matches shown — `
-        + `narrow the filter to see the other ${hidden}.`;
+    return `${page.items.length} of ${page.matched} matches shown — keep typing to narrow it`;
 };
+
+const LIBRARY_HELP = [
+    'Everything Home Assistant exposes, searched by id, name or device class. Pick one '
+        + 'to add it to the panel; the list stays open so you can add several.',
+    'The time and the date are built in: they come from this machine’s clock, not from '
+        + 'Home Assistant, and are always at the top.',
+    'Without HA_TOKEN in .env, the service runs on a mock source and this lists the '
+        + 'mock’s own entities instead.',
+];
+
+const PANEL_HELP = [
+    'Every entity the panel can read. Adding one here does not show it yet — the Flow '
+        + 'tab decides when it appears.',
+    '“Read as” is how its state is parsed: a percentage can be drawn as a bar, a '
+        + 'temperature is rounded, anything else is text. “Edit” opens how it looks on '
+        + 'the Display tab.',
+    'Removing an entity the flow uses takes it out of those rules too.',
+    'Changing which Home Assistant entities are listed makes the service resubscribe '
+        + 'when you save; the panel keeps its old reading until the new snapshot '
+        + 'arrives. The built-in items cost no reconnect.',
+];
 
 const libraryCard = (context, onAdded) => {
     const { config } = context;
-    const note = make('p', { class: 'caveat' });
+    const note = make('p', { class: 'hint' });
     /**
      * The rows the picker is showing, by id. The picker hands back the id that
      * was chosen, and adding needs the whole item — its state, its device
@@ -87,7 +105,7 @@ const libraryCard = (context, onAdded) => {
         try {
             const search = query === '' ? '' : `?q=${encodeURIComponent(query)}`;
             const page = await requestJson(`/api/library${search}`);
-            note.className = 'caveat';
+            note.className = 'hint';
             note.textContent = describePage(page, page.source);
 
             shown.clear();
@@ -117,7 +135,7 @@ const libraryCard = (context, onAdded) => {
     };
 
     const picker = createPicker({
-        placeholder: 'Search by id, name or device class',
+        placeholder: 'Search Home Assistant to add an entity…',
         query: lastQuery,
         find,
         keepOpenAfterPick: true,
@@ -146,7 +164,7 @@ const libraryCard = (context, onAdded) => {
     // there before the field is touched, rather than only once it is opened.
     void find(lastQuery);
 
-    return { node: card('Library', [picker.node, note]) };
+    return { node: card('Add to the panel', [picker.node, note], LIBRARY_HELP) };
 };
 
 const usedInFlow = (config, entityId) =>
@@ -168,7 +186,7 @@ const usedInFlow = (config, entityId) =>
  */
 const kindCell = (entity, context) => {
     if (context.isBuiltin(entity.entityId)) {
-        return make('span', { class: 'caveat', textContent: 'text (built in)' });
+        return make('span', { class: 'quiet', textContent: 'text (built in)' });
     }
 
     return make('select', {
@@ -203,21 +221,23 @@ const panelCard = context => {
             make('td', { class: 'id', textContent: entity.entityId }),
             make('td', {}, [kindCell(entity, context)]),
             make('td', { textContent: entity.display.style }),
-            make('td', { textContent: uses === 0 ? 'unused' : `${uses} rule${uses === 1 ? '' : 's'}` }),
+            make('td', {
+                class: uses === 0 ? 'unused' : '',
+                textContent: uses === 0 ? 'not in the flow' : `${uses} rule${uses === 1 ? '' : 's'}`,
+            }),
             make('td', { class: 'actions' }, [
                 make('button', {
                     class: 'small',
                     type: 'button',
-                    textContent: 'edit',
+                    textContent: 'Edit',
+                    title: `How ${entity.entityId} looks`,
                     onClick: () => {
                         context.selectEntity(entity.entityId);
                         context.showTab('display');
                     },
                 }),
-                make('button', {
-                    class: 'small danger',
-                    type: 'button',
-                    textContent: 'remove',
+                iconButton('trash', `Remove ${entity.entityId}`, {
+                    class: 'danger',
                     onClick: () => {
                         if (uses > 0) {
                             const ids = references.map(rule => rule.label ?? rule.id).join(', ');
@@ -239,29 +259,21 @@ const panelCard = context => {
     });
 
     const body = rows.length === 0
-        ? make('p', { class: 'empty', textContent: 'Nothing on the panel yet. Add one from the library.' })
+        ? make('p', { class: 'empty', textContent: 'Nothing on the panel yet. Search above to add the first one.' })
         : make('div', { class: 'table-scroll' }, [make('table', {}, [
             make('thead', {}, [
                 make('tr', {}, [
                     make('th', { textContent: 'Entity' }),
                     make('th', { textContent: 'Read as' }),
                     make('th', { textContent: 'Drawn as' }),
-                    make('th', { textContent: 'Used by' }),
-                    make('th', { textContent: '' }),
+                    make('th', { textContent: 'In the flow' }),
+                    make('th', {}, [make('span', { class: 'visually-hidden', textContent: 'Actions' })]),
                 ]),
             ]),
             make('tbody', {}, rows),
         ])]);
 
-    const note = make('p', {
-        class: 'caveat',
-        textContent: 'Changing which Home Assistant entities exist makes the service resubscribe '
-            + 'when you save; the panel keeps showing the old reading until the new snapshot '
-            + 'arrives. Adding or removing a built-in item costs no reconnect — it is read from '
-            + 'this machine’s clock, not from Home Assistant.',
-    });
-
-    return card('On the panel', [body, note]);
+    return card('On the panel', [body], PANEL_HELP);
 };
 
 /** Taken out of the flow too, so saving cannot leave a rule pointing at nothing. */
@@ -299,7 +311,7 @@ const removeEntity = (config, entityId) => {
 };
 
 export const renderEntities = (root, context) => {
-    root.className = 'split split-wide';
+    root.className = 'narrow';
 
     const panelHost = make('div', {});
     const drawPanel = () => panelHost.replaceChildren(panelCard(context));

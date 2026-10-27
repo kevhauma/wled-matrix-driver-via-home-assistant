@@ -216,7 +216,7 @@ with an example of what it says right now:
 The value is **this machine's clock**, rendered here and sent as the segment
 name — not WLED's own. The device's NTP and timezone may be anything; the host
 running this is the one you can check. It is read in `output.timeZone` (the
-**timezone** field on the editor's Output card), an IANA name like
+**timezone** field on the editor's Settings tab), an IANA name like
 `Europe/Brussels`; empty means the host's own, which on a container or a fresh
 Pi is usually UTC. A flow's time window is read in the same zone. The payload diff means a clock costs one
 POST a minute rather than one a second. (If you would rather the firmware did
@@ -302,9 +302,13 @@ What it insists on, in `panelConfig.ts`, for both the file and `PUT /api/config`
 
 ## The editor
 
-Three tabs on http://127.0.0.1:8000, bound to loopback — `PUT /api/config` is
+Four tabs on http://127.0.0.1:8000, bound to loopback — `PUT /api/config` is
 unauthenticated, and this runs on a network that by construction has a WLED
 device and a Home Assistant instance on it.
+
+The header carries a thumbnail of the panel, drawn from the body the service
+last sent, beside the entity it is showing and the rule that chose it. Only a
+single scrolling name or a single bar is mirrored; a custom body leaves it dark.
 
 - **Entities** — a search box over what Home Assistant exposes, and the list of
   what the panel knows. The search is the *server's*: `/api/library` answers
@@ -313,15 +317,23 @@ device and a Home Assistant instance on it.
   With no `HA_TOKEN` the picker offers the mock source's own ids instead. The
   two built-in items are always at the top of it.
 - **Flow** — the chain above, as blocks you reorder. The block currently
-  deciding is marked as you watch. "own view…" beside a `show` target or a loop
-  member gives it a display of its own; "edit view" opens it, "reset" drops it.
+  deciding is outlined as you watch. A rule's and a member's tools appear when
+  you hover or tab onto it. "own view…" beside a `show` target or a loop member
+  gives it a display of its own, shown as a badge that opens it; "reset" drops it.
 - **Display** — how one entity is drawn, with a mock-up of the panel, the exact
-  segment name, and the real `/json/state` body. For a display chosen by state,
-  the sample value is the state, and the preview says which case it picked. A custom display swaps the
-  mock-up for a JSON editor and lists what each of its segment names filled to;
-  the shared validator's complaint appears as you type.
+  segment name, and the real `/json/state` body folded under "What gets sent".
+  Placeholders are inserted at the caret from the chips under the template. For
+  a display chosen by state, the sample value is the state, and the preview says
+  which case it picked. A custom display swaps the mock-up for a JSON editor and
+  lists what each of its segment names filled to; the shared validator's
+  complaint appears as you type.
+- **Settings** — the WLED address, the brightness and the timezone: what
+  belongs to the device rather than to any one entity.
 
-One picker, used by all three tabs ([`public/picker.js`](public/picker.js)): a
+Every explanation is behind the `?` on its card, and stays open across edits
+once opened. Ctrl+S saves.
+
+One picker, used by every tab that chooses an entity ([`public/picker.js`](public/picker.js)): a
 `<select>` stops being usable somewhere around a hundred options, and you cannot
 type at one. The Entities tab's asks the server as you type; the flow's and the
 Display tab's filter the panel's own entities in the browser. Arrow keys and
@@ -699,4 +711,7 @@ focus; a time window saved and the panel falling through it; a version 1 file
 upgraded on start and saved as current; one entity added to a rotation twice,
 given its own view and both forms appearing in turn in the dry-run log; and a
 weather entity chosen by state, the sample picking the icon case and then
-`otherwise`.
+`otherwise`. After the decluttering pass: all four tabs at 1440px and at 375px
+with no sideways scroll, a placeholder chip inserted at the caret, a member's
+own view opened from its badge, the header thumbnail following the panel, and
+Ctrl+S saving.

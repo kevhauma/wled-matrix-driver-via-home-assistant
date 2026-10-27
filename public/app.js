@@ -1,10 +1,13 @@
 import { putJson, requestJson } from '/api.js';
+import { make } from '/dom.js';
 import { renderEntities } from '/entities.js';
 import { markMatchedRule, renderFlow } from '/flowEditor.js';
 import { renderDisplay } from '/displayEditor.js';
+import { createPanelPreview } from '/panelPreview.js';
+import { renderSettings } from '/settings.js';
 
 /**
- * The shell: loads the configuration, holds the draft the three tabs edit, and
+ * The shell: loads the configuration, holds the draft the tabs edit, and
  * saves it back in one piece.
  *
  * Saving is explicit on purpose. The running service applies whatever it is
@@ -13,6 +16,9 @@ import { renderDisplay } from '/displayEditor.js';
  */
 
 const STATE_POLL_MILLISECONDS = 1000;
+
+/** Long enough to read a sentence; an error stays until the next message. */
+const STATUS_MILLISECONDS = 5000;
 
 const element = id => document.getElementById(id);
 
@@ -23,7 +29,16 @@ const dom = {
     dirty: element('dirty'),
     connection: element('connection'),
     showing: element('showing'),
+    mirror: element('mirror'),
 };
+
+/**
+ * A thumbnail of the panel itself, drawn from the body the service last sent
+ * — so the header shows what is lit, not a description of it.
+ */
+const mirror = createPanelPreview();
+dom.mirror.append(mirror.canvas);
+let mirroredJson = '';
 
 const state = {
     tab: 'entities',
@@ -33,7 +48,7 @@ const state = {
     savedJson: '',
     /**
      * The built-in items and their formats, from `/api/builtins`. Loaded once
-     * at boot because three tabs need to know synchronously whether an id is
+     * at boot because several tabs need to know synchronously whether an id is
      * one of them: it changes what can be asked about it.
      */
     builtins: [],
@@ -47,9 +62,22 @@ const state = {
     live: null,
 };
 
+let statusTimer;
+
+/**
+ * A toast rather than a line under the tabs, which sat there empty almost all
+ * of the time. Errors stay until something else is said; nothing else does.
+ */
 export const setStatus = (message, kind = '') => {
+    clearTimeout(statusTimer);
     dom.status.textContent = message;
     dom.status.className = kind === '' ? 'status' : `status ${kind}`;
+    dom.status.hidden = message === '';
+    if (message !== '' && kind !== 'error') {
+        statusTimer = setTimeout(() => {
+            dom.status.hidden = true;
+        }, STATUS_MILLISECONDS);
+    }
 };
 
 const isDirty = () => JSON.stringify(state.config) !== state.savedJson;
@@ -105,6 +133,7 @@ const RENDERERS = {
     entities: renderEntities,
     flow: renderFlow,
     display: renderDisplay,
+    settings: renderSettings,
 };
 
 const render = () => {
@@ -125,15 +154,61 @@ const setTab = name => {
     render();
 };
 
+/** The rule's own words for why, when it has some. */
+const ruleLabel = ruleId => {
+    const rule = state.config?.flow.find(candidate => candidate.id === ruleId);
+    return rule?.label || '';
+};
+
 const describeDecision = live => {
     if (!live || !live.decision) {
-        return '—';
+        return ['—'];
     }
+    const why = ruleLabel(live.matchedRuleId);
+    const because = why === '' ? null : make('span', { class: 'why', textContent: why });
     if (live.decision.show === 'nothing') {
-        return `off — ${live.decision.reason}`;
+        return [make('span', { textContent: 'off' }), because ?? make('span', {
+            class: 'why',
+            textContent: live.decision.reason,
+        })];
     }
     const ownView = live.decision.display === undefined ? '' : ' (own view)';
-    return `${live.decision.entityId}${ownView}`;
+    return [make('span', { class: 'mono', textContent: `${live.decision.entityId}${ownView}` }), because];
+};
+
+/**
+ * Only the two shapes the mock-up knows — one scrolling name, or one bar —
+ * are mirrored. A custom body leaves the thumbnail dark rather than guessing.
+ */
+const mirrorOf = payload => {
+    if (!payload || payload.on === false) {
+        return { kind: 'off' };
+    }
+    const lit = (payload.seg ?? []).filter(segment => segment.on !== false);
+    if (lit.length !== 1) {
+        return null;
+    }
+    const [segment] = lit;
+    const colors = segment.col ?? [];
+    const color = colors[0] ?? [255, 255, 255];
+    if (segment.fx === 98) {
+        return { kind: 'bar', percent: segment.ix ?? 0, color, trackColor: colors[1] ?? [0, 0, 0] };
+    }
+    if (segment.fx === 122 && typeof segment.n === 'string') {
+        const columns = (segment.stop ?? 32) - (segment.start ?? 0);
+        return { kind: 'text', text: segment.n, visible: Math.floor(columns / 4), color, speed: segment.sx ?? 128 };
+    }
+    return null;
+};
+
+const applyMirror = payload => {
+    // Redrawn only when the body changes: every redraw restarts a scroll.
+    const json = JSON.stringify(payload ?? null);
+    if (json === mirroredJson) {
+        return;
+    }
+    mirroredJson = json;
+    mirror.show(mirrorOf(payload));
 };
 
 const CONNECTION_CLASSES = {
@@ -149,7 +224,8 @@ const applyLive = live => {
     const connection = live.connection ?? 'unknown';
     dom.connection.textContent = connection;
     dom.connection.className = CONNECTION_CLASSES[connection] ?? 'badge';
-    dom.showing.textContent = describeDecision(live);
+    dom.showing.replaceChildren(...describeDecision(live).filter(Boolean));
+    applyMirror(live.decision?.show === 'nothing' ? { on: false } : live.lastPayload);
 
     /**
      * The flow tab marks the rule that is currently matching. It moves that
@@ -168,10 +244,14 @@ const pollState = async () => {
     } catch {
         dom.connection.textContent = 'no service';
         dom.connection.className = 'badge live-off';
+        applyMirror({ on: false });
     }
 };
 
 const save = async () => {
+    if (!isDirty()) {
+        return;
+    }
     dom.save.disabled = true;
     try {
         const saved = await putJson('/api/config', state.config);
@@ -202,6 +282,13 @@ const load = async () => {
 };
 
 dom.save.addEventListener('click', () => void save());
+
+addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void save();
+    }
+});
 
 for (const button of document.querySelectorAll('.tabs button')) {
     button.addEventListener('click', () => setTab(button.dataset.tab));

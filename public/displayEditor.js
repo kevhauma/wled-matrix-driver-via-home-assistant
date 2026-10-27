@@ -1,4 +1,4 @@
-import { card, field, fromHex, make, option, toHex } from '/dom.js';
+import { card, field, fromHex, iconButton, make, option, sliderField, toHex } from '/dom.js';
 import { postJson, requestJson } from '/api.js';
 import { createLocalPicker } from '/picker.js';
 import { createPanelPreview } from '/panelPreview.js';
@@ -46,6 +46,48 @@ const placeholderHelp = () => make('div', { class: 'tokens' }, PLACEHOLDER_HELP.
     ]),
 ));
 
+/**
+ * Which placeholders are worth offering for this entity: a temperature has no
+ * artist, and a media player's title is the one you came for.
+ */
+const placeholdersFor = entity => {
+    const tokens = ['{{value}}'];
+    if (entity.kind === 'percent') {
+        tokens.push('{{percent}}', '{{unit}}');
+    }
+    if (entity.kind === 'temperature') {
+        tokens.push('{{degrees}}', '{{unit}}');
+    }
+    if (entity.entityId.startsWith('media_player.')) {
+        tokens.push('{{title}}', '{{artist}}');
+    }
+    return tokens;
+};
+
+/**
+ * Placeholders you click rather than type, inserted at the caret. Typing one
+ * wrong is the most common way to get a literal `{{percentage}}` scrolling
+ * across the panel; the full list stays in the card's help.
+ */
+const placeholderChips = (entity, control) => make('div', { class: 'chips' }, [
+    make('span', { class: 'quiet', textContent: 'Insert' }),
+    ...placeholdersFor(entity).map(token => make('button', {
+        type: 'button',
+        class: 'chip',
+        textContent: token,
+        title: PLACEHOLDER_HELP.find(([name]) => name === token)?.[1] ?? token,
+        // Keeps the caret where it was, which is where the token goes.
+        onMouseDown: event => event.preventDefault(),
+        onClick: () => {
+            const start = control.selectionStart ?? control.value.length;
+            const end = control.selectionEnd ?? start;
+            control.focus();
+            control.setRangeText(token, start, end, 'end');
+            control.dispatchEvent(new Event('input', { bubbles: true }));
+        },
+    })),
+]);
+
 const WHITE = [255, 255, 255];
 
 const preview = createPanelPreview();
@@ -57,91 +99,6 @@ const samples = new Map();
  * shows; `display.payload` only moves on when it parses.
  */
 const drafts = new Map();
-
-/**
- * A field whose label carries the control's current value, e.g. `speed — 70`.
- * The label is updated in place, because re-rendering on every `input` event
- * replaces the slider under the pointer and ends the drag.
- */
-const sliderField = (name, value, onValue) => {
-    const caption = document.createTextNode(`${name} — ${value}`);
-    const slider = make('input', {
-        type: 'range',
-        min: '0',
-        max: '255',
-        value,
-        onInput: event => {
-            const next = Number(event.target.value);
-            caption.textContent = `${name} — ${next}`;
-            onValue(next);
-        },
-    });
-    return make('label', { class: 'field' }, [caption, slider]);
-};
-
-/**
- * What the built-in clock and a flow's time window read in. The list is the
- * browser's, which is the same ICU list the server checks against in all but
- * the newest zones — and a saved zone missing from it is added rather than
- * silently shown as something else.
- */
-const timeZoneSelect = context => {
-    const { output } = context.config;
-    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    // The browser's list leaves out UTC, which is a zone the server accepts.
-    const zones = ['UTC', ...Intl.supportedValuesOf('timeZone').filter(zone => zone !== 'UTC')];
-    const listed = zones.includes(output.timeZone) || output.timeZone === ''
-        ? zones
-        : [output.timeZone, ...zones];
-
-    const choices = [
-        option('', 'the host’s own', output.timeZone === ''),
-        ...listed.map(zone => {
-            const text = zone === here ? `${zone} — this browser` : zone;
-            return option(zone, text, zone === output.timeZone);
-        }),
-    ];
-
-    return make('select', {
-        onChange: event => {
-            output.timeZone = event.target.value;
-            context.changed();
-        },
-    }, choices);
-};
-
-const outputCard = (context, refresh) => {
-    const { config } = context;
-
-    const brightness = sliderField('brightness', config.output.brightness, value => {
-        config.output.brightness = value;
-        context.edited();
-        refresh();
-    });
-
-    const ip = make('input', {
-        type: 'text',
-        value: config.output.wledIp,
-        placeholder: '192.168.1.69 — empty prints instead of posting',
-        onChange: event => {
-            config.output.wledIp = event.target.value.trim();
-            context.changed();
-        },
-    });
-
-    return card('Output', [
-        make('div', { class: 'fields' }, [
-            brightness,
-            field('WLED address', ip),
-            field('timezone', timeZoneSelect(context)),
-        ]),
-        make('p', {
-            class: 'caveat',
-            textContent: 'WLED_IP and WLED_BRIGHTNESS in .env only seeded this file the first '
-                + 'time it was written. These values win now.',
-        }),
-    ]);
-};
 
 /** What a choice by state falls back to, which is what a change of style keeps. */
 const plainOf = display => display.style === 'byState' ? display.otherwise : display;
@@ -249,21 +206,8 @@ const customFields = (view, context, refresh) => {
 
     return make('div', { class: 'custom' }, [
         editor,
+        placeholderChips(view.entity, editor),
         failure,
-        make('p', {
-            class: 'caveat',
-            textContent: 'A whole /json/state body. Segments other entities use are switched '
-                + 'off for you; on and bri are filled in only if you leave them out. Every '
-                + 'seg entry needs a literal id — the service has to know which segments this '
-                + 'display owns before it has a value to put in them.',
-        }),
-        placeholderHelp(),
-        make('p', {
-            class: 'caveat',
-            textContent: 'A string that is nothing but one placeholder takes that value’s own '
-                + 'type, so "ix": "{{percent}}" arrives as a number. Anywhere else it is '
-                + 'interpolated, so "bat {{percent}}%" stays text.',
-        }),
     ]);
 };
 
@@ -356,26 +300,16 @@ const caseButtons = (view, cases, index, context) => {
         context.changed();
     };
     return [
-        make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: '↑',
+        iconButton('up', 'Check this case earlier', {
             disabled: index === 0,
-            title: 'Check this case earlier',
             onClick: () => move(-1),
         }),
-        make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: '↓',
+        iconButton('down', 'Check this case later', {
             disabled: index === cases.length - 1,
-            title: 'Check this case later',
             onClick: () => move(1),
         }),
-        make('button', {
-            class: 'small danger',
-            type: 'button',
-            textContent: 'delete',
+        iconButton('trash', 'Delete this case', {
+            class: 'danger',
             onClick: () => {
                 cases.splice(index, 1);
                 forgetDrafts(view.key);
@@ -456,7 +390,7 @@ const byStateFields = (view, context, refresh, headerFields) => {
     };
 
     const addCase = make('button', {
-        class: 'small',
+        class: 'small ghost',
         type: 'button',
         textContent: '+ case',
         onClick: () => {
@@ -468,18 +402,9 @@ const byStateFields = (view, context, refresh, headerFields) => {
     });
 
     return make('div', {}, [
-        make('div', { class: 'fields' }, headerFields.filter(Boolean)),
-        make('p', {
-            class: 'caveat',
-            textContent: 'Read top to bottom: the first case the entity’s state matches is drawn. '
-                + '“is one of” compares exactly — “sunny”, “clear-night”, “playing”; “is above” and '
-                + '“is below” read the state as a number, and one that is not a number matches '
-                + 'neither. A picture for a state is '
-                + 'a custom WLED JSON case drawing pixels with the segment’s "i" field; the '
-                + 'device’s fonts are ASCII only.',
-        }),
+        make('div', { class: 'fields', style: 'margin-bottom:14px' }, headerFields.filter(Boolean)),
         ...caseBlocks,
-        make('div', { class: 'row', style: 'margin:4px 0 12px' }, [addCase]),
+        make('div', { class: 'row adders', style: 'margin:4px 0 12px' }, [addCase]),
         make('div', { class: 'state-case' }, [
             make('div', { class: 'rule-head' }, [
                 make('span', { class: 'keyword', textContent: 'OTHERWISE' }),
@@ -543,11 +468,10 @@ const displayFields = (view, context, refresh) => {
 
     if (display.style === 'custom') {
         return make('div', {}, [
-            make('div', { class: 'fields' }, [
+            make('div', { class: 'fields', style: 'margin-bottom:14px' }, [
                 format,
                 field('drawn as', stylePicker),
             ].filter(Boolean)),
-            make('div', { style: 'height:14px' }),
             customFields(view, context, refresh),
         ]);
     }
@@ -593,16 +517,6 @@ const displayFields = (view, context, refresh) => {
             display.speed = value;
             edited();
         }));
-        fields.push(field('text', make('input', {
-            type: 'text',
-            class: 'mono',
-            value: display.text,
-            placeholder: '{{value}}',
-            onInput: event => {
-                display.text = event.target.value;
-                edited();
-            },
-        })));
     }
 
     const fieldGrid = make('div', { class: 'fields' }, fields);
@@ -610,13 +524,24 @@ const displayFields = (view, context, refresh) => {
         return fieldGrid;
     }
 
-    const note = make('p', {
-        class: 'caveat',
-        textContent: 'Anything around a placeholder is drawn as written, so "PV {{value}}W" is '
-            + 'a prefix and a suffix. A media title too long for the panel is tried again '
-            + 'without its artist before anything is cut.',
+    /**
+     * The template gets a row of its own: it is the one field here you type
+     * into, and the placeholders that go in it sit right under it.
+     */
+    const template = make('input', {
+        type: 'text',
+        class: 'mono',
+        value: display.text,
+        placeholder: '{{value}}',
+        onInput: event => {
+            display.text = event.target.value;
+            edited();
+        },
     });
-    return make('div', {}, [fieldGrid, note, placeholderHelp()]);
+    return make('div', { class: 'display-fields' }, [
+        make('div', { class: 'template' }, [field('text', template), placeholderChips(entity, template)]),
+        fieldGrid,
+    ]);
 };
 
 /**
@@ -677,7 +602,6 @@ const refreshPreview = async (view, sample, nodes, context) => {
         const display = result.display;
         nodes.choice.textContent = describeChoice(result, sample);
         nodes.choice.hidden = result.caseIndex === undefined;
-        nodes.caveat.textContent = CAVEATS[display.style];
         preview.canvas.hidden = display.style === 'custom';
 
         nodes.warnings.replaceChildren(...result.warnings.map(name =>
@@ -692,10 +616,8 @@ const refreshPreview = async (view, sample, nodes, context) => {
             return;
         }
 
-        nodes.readout.textContent = `segment name "${result.text}" — ${result.length} of 32 `
-            + `characters, ${result.visible} visible at once`;
-
         if (display.style === 'bar') {
+            nodes.readout.textContent = `a bar at ${result.percent ?? 0}%`;
             preview.show({
                 kind: 'bar',
                 percent: result.percent ?? 0,
@@ -705,6 +627,9 @@ const refreshPreview = async (view, sample, nodes, context) => {
             return;
         }
 
+        const movement = result.length > result.visible ? 'scrolls' : 'fits';
+        nodes.readout.textContent = `"${result.text}" — ${result.length} of 32 characters, `
+            + `${result.visible} fit at once, so it ${movement}`;
         preview.show({
             kind: 'text',
             text: result.text,
@@ -725,16 +650,17 @@ const refreshPreview = async (view, sample, nodes, context) => {
     }
 };
 
-const CAVEATS = {
-    bar: 'The bar is drawn as a proportion of 32 columns, left to right, which is what the '
-        + 'device does: a bar segment goes out as a transposed Bar expansion of the Percent '
-        + 'effect, across the whole panel.',
-    text: 'Letterforms are approximate: the device uses its own font, and this cannot draw it. '
-        + 'The character count, the visible window and whether it scrolls are accurate.',
-    custom: 'No mock-up for a custom body: this can draw one scrolling string or one bar across '
-        + 'the panel, and nothing here knows what effects you have asked for or how you have '
-        + 'divided the segments. What is below is exactly what the device is sent.',
-};
+const PREVIEW_HELP = [
+    'A mock-up of the 32×8 panel, drawn by the same code that builds what the device is '
+        + 'sent — so the text, its length, and whether it scrolls are exact.',
+    'Letterforms are approximate: the device uses its own font, which a browser cannot '
+        + 'draw. A bar is drawn as a proportion of the 32 columns, as the device does.',
+    'A custom body has no mock-up: nothing here knows which effects it asks for or how it '
+        + 'divides the segments. “What gets sent” is exactly what the device receives.',
+    'The sample value stands in for the entity’s state, so you can try a long title, or a '
+        + 'state a display chosen by state reacts to. The built-in time and date need none: '
+        + 'they read this machine’s clock, and the service redraws them as the minute turns.',
+];
 
 /**
  * Returns its own node and a way to refresh it, because the JSON editor
@@ -748,9 +674,8 @@ const previewCard = (view, context) => {
     const sample = stored ?? { value: SAMPLES[entity.kind] ?? '', artist: '' };
 
     const nodes = {
-        caveat: make('p', { class: 'caveat' }),
         choice: make('p', { class: 'choice', hidden: true }),
-        readout: make('div', { class: 'caveat' }),
+        readout: make('div', { class: 'hint readout' }),
         warnings: make('div', { class: 'warnings' }),
         problem: make('p', { class: 'warning', hidden: true }),
         payload: make('pre', { class: 'payload' }),
@@ -792,30 +717,30 @@ const previewCard = (view, context) => {
      * below is the real string as of this render.
      */
     const isBuiltin = context.isBuiltin(entity.entityId);
-    const clockNote = !isBuiltin ? null : make('p', {
-        class: 'caveat',
-        textContent: 'The value is this machine’s clock, so there is nothing to sample — what '
-            + 'is below is what would go out right now. The service redraws it as the minute '
-            + 'turns.',
-    });
 
     refresh();
+
+    const samplesRow = isBuiltin ? null : make('div', { class: 'fields' }, [
+        field(isByState ? 'sample state' : 'sample value', sampleInput),
+        artistInput === null ? null : field('sample artist', artistInput),
+    ].filter(Boolean));
+
+    const sent = make('details', { class: 'sent' }, [
+        make('summary', { textContent: 'What gets sent' }),
+        nodes.payload,
+    ]);
 
     const node = card('Preview', [
         make('div', { class: 'preview' }, [
             preview.canvas,
-            nodes.caveat,
-            clockNote,
-            isBuiltin ? null : field(isByState ? 'sample value — the state to choose by' : 'sample value', sampleInput),
-            nodes.choice,
-            isBuiltin || artistInput === null ? null : field('sample artist', artistInput),
             nodes.readout,
+            nodes.choice,
             nodes.warnings,
             nodes.problem,
-            make('h2', { textContent: 'What gets sent', style: 'margin-top:8px' }),
-            nodes.payload,
+            samplesRow,
+            sent,
         ]),
-    ]);
+    ], PREVIEW_HELP);
 
     return { node, refresh };
 };
@@ -858,34 +783,38 @@ const describeTarget = view => {
     const action = view.rule.action;
     if (action.do === 'loop') {
         const position = action.members.findIndex(member => member.id === view.target.memberId);
-        return `the rule “${label}”, rotation member ${position + 1}`;
+        return `“${label}”, rotation member ${position + 1}`;
     }
-    return `the rule “${label}”`;
+    return `“${label}”`;
 };
 
-const flowDisplayHeader = (view, context) => make('div', {}, [
-    make('p', {
-        class: 'caveat',
-        textContent: `How ${view.entity.entityId} is drawn in ${describeTarget(view)} only. `
-            + 'Everywhere else it uses its own display.',
-    }),
+/**
+ * Said rather than explained: which display this is decides what an edit
+ * changes, so it stays in view where the help would not.
+ */
+const flowDisplayHeader = (view, context) => make('div', { class: 'flow-target' }, [
+    make('p', { class: 'hint' }, [
+        make('span', { class: 'mono', textContent: view.entity.entityId }),
+        ` as drawn in ${describeTarget(view)} only.`,
+    ]),
     make('div', { class: 'row' }, [
         make('button', {
             class: 'small',
             type: 'button',
-            textContent: '← back to the flow',
+            textContent: 'Back to the flow',
             onClick: () => context.showTab('flow'),
         }),
         make('button', {
             class: 'small',
             type: 'button',
-            textContent: `edit ${view.entity.entityId}’s own display`,
+            textContent: 'Edit its own display',
+            title: `How ${view.entity.entityId} looks everywhere else`,
             onClick: () => context.selectEntity(view.entity.entityId),
         }),
         make('button', {
             class: 'small danger',
             type: 'button',
-            textContent: 'use its own display here',
+            textContent: 'Use its own display here',
             onClick: () => {
                 delete view.holder.display;
                 forgetDrafts(view.key);
@@ -896,18 +825,67 @@ const flowDisplayHeader = (view, context) => make('div', {}, [
     ]),
 ]);
 
+/** The explanation follows the style being edited, so it never has to say "if". */
+const STYLE_HELP = {
+    text: [
+        'Scrolling text draws the template. Anything around a placeholder is drawn as '
+            + 'written, so "PV {{value}}W" is a prefix and a suffix. A media title too long '
+            + 'for the panel is tried again without its artist before anything is cut.',
+    ],
+    bar: [
+        'A bar fills from the left in proportion to the reading, so it needs an entity read '
+            + 'as a percentage.',
+    ],
+    custom: [
+        'A whole WLED /json/state body. Segments other entities use are switched off for '
+            + 'you; "on" and "bri" are filled in only if you leave them out. Every "seg" entry '
+            + 'needs a literal "id".',
+        'A string that is nothing but one placeholder takes that value’s own type, so '
+            + '"ix": "{{percent}}" arrives as a number. Anywhere else it is text.',
+    ],
+    byState: [
+        'Read top to bottom: the first case the entity’s raw state matches is drawn, and '
+            + '“otherwise” when none does. “is one of” compares exactly — “sunny”, '
+            + '“clear-night”, “playing”. “is above” and “is below” read the state as a number; '
+            + 'one that is not a number matches neither.',
+        'A picture for a state is a custom WLED JSON case drawing pixels with the segment’s '
+            + '"i" field — the device’s fonts are ASCII only.',
+    ],
+};
+
+const displayHelp = view => {
+    const style = view.holder.display.style;
+    return [
+        view.target === null
+            ? 'How this entity looks wherever the flow shows it. A rule or rotation member can '
+                + 'draw it differently in its own place, with “own view…” on the Flow tab.'
+            : 'How this entity looks in one place in the flow. Everywhere else it uses its own '
+                + 'display.',
+        ...STYLE_HELP[style],
+        style === 'bar' ? null : 'The placeholders:',
+        style === 'bar' ? null : placeholderHelp(),
+        style === 'custom' ? null : 'The segment is the WLED segment it draws on; 0 is the whole panel.',
+    ].filter(Boolean);
+};
+
 export const renderDisplay = (root, context) => {
     const { config } = context;
     root.className = 'split';
 
     if (config.entities.length === 0) {
-        root.className = '';
+        root.className = 'narrow';
         root.append(card('Display', [
-            make('p', {
-                class: 'empty',
-                textContent: 'No entities yet — add one on the Entities tab first.',
-            }),
-        ]), outputCard(context, () => {}));
+            make('p', { class: 'empty' }, [
+                'Nothing to style yet. ',
+                make('button', {
+                    type: 'button',
+                    class: 'link',
+                    textContent: 'Add an entity',
+                    onClick: () => context.showTab('entities'),
+                }),
+                ' first.',
+            ]),
+        ]));
         return;
     }
 
@@ -926,12 +904,9 @@ export const renderDisplay = (root, context) => {
 
     const left = card(view.target !== null ? 'Display in the flow' : 'Display', [
         heading,
-        make('div', { style: 'height:14px' }),
+        make('div', { class: 'divider' }),
         displayFields(view, context, refresh),
-    ]);
+    ], displayHelp(view));
 
-    root.append(
-        make('div', { style: 'display:grid;gap:20px' }, [left, outputCard(context, refresh)]),
-        node,
-    );
+    root.append(left, node);
 };

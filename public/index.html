@@ -10,12 +10,15 @@
     <header>
         <h1>wled-ha-bridge</h1>
         <div class="live" role="status" aria-label="What the panel is doing">
-            <span id="connection" class="badge">connecting</span>
-            <span id="showing" class="showing">&mdash;</span>
+            <div id="mirror" class="mirror" title="What the panel is showing now"></div>
+            <div class="live-text">
+                <span id="connection" class="badge">connecting</span>
+                <span id="showing" class="showing">&mdash;</span>
+            </div>
         </div>
         <div class="save">
-            <span id="dirty" class="dirty" hidden>unsaved changes</span>
-            <button id="save" type="button" disabled>Save</button>
+            <span id="dirty" class="dirty" hidden>Unsaved changes</span>
+            <button id="save" type="button" disabled title="Save (Ctrl+S)">Save</button>
         </div>
     </header>
 
@@ -23,11 +26,12 @@
         <button type="button" role="tab" data-tab="entities" aria-selected="true">Entities</button>
         <button type="button" role="tab" data-tab="flow" aria-selected="false">Flow</button>
         <button type="button" role="tab" data-tab="display" aria-selected="false">Display</button>
+        <button type="button" role="tab" data-tab="settings" aria-selected="false">Settings</button>
     </nav>
 
-    <p id="status" class="status" role="status"></p>
-
     <main id="panel"></main>
+
+    <p id="status" class="status" role="status" hidden></p>
 
     <script type="module" src="/app.js"></script>
 </body>

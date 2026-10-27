@@ -1,4 +1,4 @@
-import { card, make, option } from '/dom.js';
+import { card, icon, iconButton, make, option } from '/dom.js';
 import { createLocalPicker } from '/picker.js';
 
 /**
@@ -49,6 +49,24 @@ const keywordFor = (rule, index, total) => {
 
 const newId = () => `rule-${Math.random().toString(36).slice(2, 8)}`;
 
+const FLOW_HELP = [
+    'Read top to bottom: the first rule whose conditions match decides what the panel '
+        + 'shows, and the rules below it are not consulted. The one deciding right now is '
+        + 'outlined.',
+    'A rule with no conditions always matches — except a rotation, which is skipped while '
+        + 'none of its members has a reading. Keep a rule with no conditions at the bottom to '
+        + 'catch that.',
+    '“take turns between” shows each member for the seconds given. Interrupted and then '
+        + 'resumed, it comes back to the member it was on and gives it a full turn. The same '
+        + 'entity can be a member twice — a media player’s title, then its artist.',
+    'Hover a rule or a member for its tools. “show when…” gives a member conditions of its '
+        + 'own: it takes its turn only while they match. “own view…” draws an entity '
+        + 'differently in that one place; its badge opens it again, and “reset” goes back to '
+        + 'the entity’s own display.',
+    'A time window is read on this machine’s clock, in the timezone on the Settings tab. '
+        + 'One whose end is earlier than its start runs past midnight.',
+];
+
 /**
  * The same searchable control the Entities tab uses, over the panel's own
  * entities rather than Home Assistant's. A `<select>` would do for four of
@@ -91,11 +109,8 @@ const setTest = (condition, test, config) => {
     }
 };
 
-const removeButton = (rule, index, context) => make('button', {
-    class: 'small danger',
-    type: 'button',
-    textContent: '×',
-    title: 'Remove this condition',
+const removeButton = (rule, index, context) => iconButton('close', 'Remove this condition', {
+    class: 'danger',
     onClick: () => {
         rule.conditions.splice(index, 1);
         context.changed();
@@ -124,11 +139,11 @@ const timeInput = (condition, key, context) => make('input', {
 });
 
 const timeRow = (rule, condition, index, context) => make('div', { class: 'condition time' }, [
-    make('span', { class: 'caveat', textContent: 'this machine’s clock' }),
+    make('span', { class: 'quiet', textContent: 'clock' }),
     testPicker(condition, context),
     make('div', { class: 'window' }, [
         timeInput(condition, 'from', context),
-        make('span', { class: 'caveat', textContent: 'and' }),
+        make('span', { class: 'quiet', textContent: 'and' }),
         timeInput(condition, 'to', context),
     ]),
     removeButton(rule, index, context),
@@ -181,37 +196,43 @@ const summarise = display => {
  * The control for drawing an entity differently here than everywhere else.
  * Starting one copies the entity's own display, so the first thing you see on
  * the Display tab is what it already looked like, not a blank to fill in.
+ *
+ * Split in two: a view this place already has is a state worth seeing at all
+ * times, so its badge — which is also how you open it — stays out; the
+ * buttons that change it appear with the rest of the row's tools.
  */
 const viewControls = (holder, target, context) => {
     const { config } = context;
     const edit = () => context.editFlowDisplay(target, holder.entityId);
 
     if (holder.display === undefined) {
-        return [make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: 'own view…',
-            title: 'Draw it differently here than everywhere else',
-            onClick: () => {
-                const entity = config.entities.find(candidate => candidate.entityId === holder.entityId);
-                if (entity === undefined) {
-                    return;
-                }
-                holder.display = structuredClone(entity.display);
-                edit();
-            },
-        })];
+        return {
+            badge: null,
+            tools: [make('button', {
+                class: 'small',
+                type: 'button',
+                textContent: 'own view…',
+                title: 'Draw it differently here than everywhere else',
+                onClick: () => {
+                    const entity = config.entities.find(candidate => candidate.entityId === holder.entityId);
+                    if (entity === undefined) {
+                        return;
+                    }
+                    holder.display = structuredClone(entity.display);
+                    edit();
+                },
+            })],
+        };
     }
 
-    return [
-        make('button', {
-            class: 'small',
+    return {
+        badge: make('button', {
+            class: 'view-badge',
             type: 'button',
-            textContent: 'edit view',
-            title: 'How it is drawn here only',
+            title: `Drawn its own way here: ${summarise(holder.display)}. Click to edit.`,
             onClick: edit,
-        }),
-        make('button', {
+        }, [make('span', { textContent: summarise(holder.display) }), icon('edit')]),
+        tools: [make('button', {
             class: 'small danger',
             type: 'button',
             textContent: 'reset',
@@ -220,12 +241,12 @@ const viewControls = (holder, target, context) => {
                 delete holder.display;
                 context.changed();
             },
-        }),
-    ];
+        })],
+    };
 };
 
 const matchPickerFor = (owner, context) => owner.conditions.length < 2 ? null : make('div', { class: 'row' }, [
-    make('span', { class: 'caveat', textContent: 'match' }),
+    make('span', { class: 'quiet', textContent: 'match' }),
     make('select', {
         style: 'width:auto',
         onChange: event => {
@@ -240,7 +261,7 @@ const matchPickerFor = (owner, context) => owner.conditions.length < 2 ? null : 
 
 const addConditionButtons = (owner, context) => [
     make('button', {
-        class: 'small',
+        class: 'small ghost',
         type: 'button',
         textContent: '+ condition',
         disabled: context.config.entities.length === 0,
@@ -251,7 +272,7 @@ const addConditionButtons = (owner, context) => [
         },
     }),
     make('button', {
-        class: 'small',
+        class: 'small ghost',
         type: 'button',
         textContent: '+ time window',
         onClick: () => {
@@ -288,7 +309,7 @@ const memberWhenEditor = (member, context) => {
         ]),
         ...when.conditions.map((condition, position) => conditionRow(when, condition, position, scoped)),
         matchPickerFor(when, scoped),
-        make('div', { class: 'row' }, addConditionButtons(when, scoped)),
+        make('div', { class: 'row adders' }, addConditionButtons(when, scoped)),
     ]);
 };
 
@@ -300,15 +321,11 @@ const loopEditor = (rule, context) => {
     // artist.
     const ids = config.entities.map(entity => entity.entityId);
 
-    const members = action.members.map((member, index) => make('div', {}, [make('div', { class: 'loop-member' }, [
-        make('span', { class: 'mono', textContent: `${index + 1}. ${member.entityId}` }),
-        member.display === undefined ? null : make('span', {
-            class: 'badge',
-            textContent: summarise(member.display),
-            title: `Drawn its own way here: ${summarise(member.display)}`,
-        }),
-        make('span', { class: 'spacer' }),
-        member.when !== undefined ? null : make('button', {
+    const memberRow = (member, index) => {
+        const view = viewControls(member, { ruleId: rule.id, memberId: member.id }, context);
+        const isOnly = action.members.length === 1;
+
+        const showWhen = member.when !== undefined ? null : make('button', {
             class: 'small',
             type: 'button',
             textContent: 'show when…',
@@ -322,48 +339,47 @@ const loopEditor = (rule, context) => {
                 };
                 context.changed();
             },
-        }),
-        ...viewControls(member, { ruleId: rule.id, memberId: member.id }, context),
-        make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: '↑',
-            disabled: index === 0,
-            title: 'Earlier in the rotation',
-            onClick: () => {
-                const [moved] = action.members.splice(index, 1);
-                action.members.splice(index - 1, 0, moved);
-                context.changed();
-            },
-        }),
-        make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: '↓',
-            disabled: index === action.members.length - 1,
-            title: 'Later in the rotation',
-            onClick: () => {
-                const [moved] = action.members.splice(index, 1);
-                action.members.splice(index + 1, 0, moved);
-                context.changed();
-            },
-        }),
-        make('button', {
-            class: 'small danger',
-            type: 'button',
-            textContent: '×',
-            disabled: action.members.length === 1,
-            title: action.members.length === 1
-                ? 'A rotation needs at least one entity'
-                : 'Take out of the rotation',
-            onClick: () => {
-                action.members.splice(index, 1);
-                context.changed();
-            },
-        }),
-    ]), memberWhenEditor(member, context)]));
+        });
 
-    const adder = ids.length === 0 ? null : make('div', { class: 'loop-member' }, [
+        const move = offset => {
+            const [moved] = action.members.splice(index, 1);
+            action.members.splice(index + offset, 0, moved);
+            context.changed();
+        };
+
+        return make('div', { class: 'loop-member' }, [
+            make('span', { class: 'position', textContent: String(index + 1) }),
+            make('span', { class: 'mono member-id', textContent: member.entityId }),
+            view.badge,
+            make('span', { class: 'spacer' }),
+            make('div', { class: 'tools' }, [
+                showWhen,
+                ...view.tools,
+                iconButton('up', 'Earlier in the rotation', {
+                    disabled: index === 0,
+                    onClick: () => move(-1),
+                }),
+                iconButton('down', 'Later in the rotation', {
+                    disabled: index === action.members.length - 1,
+                    onClick: () => move(1),
+                }),
+                iconButton('close', isOnly ? 'A rotation needs at least one entity' : 'Take out of the rotation', {
+                    class: 'danger',
+                    disabled: isOnly,
+                    onClick: () => {
+                        action.members.splice(index, 1);
+                        context.changed();
+                    },
+                }),
+            ]),
+        ]);
+    };
+
+    const members = action.members.map((member, index) =>
+        make('div', {}, [memberRow(member, index), memberWhenEditor(member, context)])
+    );
+
+    const adder = ids.length === 0 ? null : make('div', { class: 'loop-member adder' }, [
         createLocalPicker({
             ids,
             value: '',
@@ -375,32 +391,24 @@ const loopEditor = (rule, context) => {
         }),
     ]);
 
-    const dwell = make('label', { class: 'field' }, [
-        'seconds each',
-        make('input', {
-            type: 'number',
-            min: '1',
-            max: '3600',
-            value: action.dwellSeconds,
-            onInput: event => {
-                action.dwellSeconds = Number(event.target.value);
-                context.edited();
-            },
-        }),
-    ]);
-
-    return make('div', {}, [
-        make('div', { class: 'loop-members' }, [...members, adder]),
-        make('div', { class: 'row', style: 'margin-top:10px;max-width:160px' }, [dwell]),
-        make('p', {
-            class: 'caveat',
-            textContent: 'Interrupted and then resumed, a rotation comes back to the member it '
-                + 'was on and gives it a full turn. “own view…” draws a member differently '
-                + 'here than everywhere else; “show when…” gives it a turn only while '
-                + 'conditions of its own match.',
-        }),
-    ]);
+    return make('div', { class: 'loop-members' }, [...members, adder]);
 };
+
+/** On the THEN line, where it reads as the end of the sentence. */
+const dwellField = (action, context) => make('label', { class: 'inline-field' }, [
+    'for',
+    make('input', {
+        type: 'number',
+        min: '1',
+        max: '3600',
+        value: action.dwellSeconds,
+        onInput: event => {
+            action.dwellSeconds = Number(event.target.value);
+            context.edited();
+        },
+    }),
+    'seconds each',
+]);
 
 /**
  * Switching between `show` and `loop` carries the entity and any display set
@@ -442,18 +450,16 @@ const actionEditor = (rule, context) => {
         })
         : null;
 
-    const controls = action.do === 'show' ? viewControls(action, { ruleId: rule.id }, context) : [];
-    const summary = action.do === 'show' && action.display !== undefined
-        ? make('span', { class: 'badge', textContent: summarise(action.display) })
-        : null;
+    const view = action.do === 'show' ? viewControls(action, { ruleId: rule.id }, context) : null;
 
     return make('div', {}, [
         make('div', { class: 'then' }, [
             make('span', { class: 'keyword', textContent: 'THEN' }),
-            make('div', { style: 'min-width:170px' }, [picker]),
-            extra === null ? null : make('div', { style: 'min-width:220px;flex:1' }, [extra]),
-            summary,
-            ...controls,
+            make('div', { class: 'action-picker' }, [picker]),
+            extra === null ? null : make('div', { class: 'then-target' }, [extra]),
+            action.do === 'loop' ? dwellField(action, context) : null,
+            view?.badge,
+            view === null ? null : make('div', { class: 'tools' }, view.tools),
         ]),
         action.do === 'loop' ? loopEditor(rule, context) : null,
     ]);
@@ -482,14 +488,16 @@ const ruleCard = (rule, index, context) => {
 
     const flag = make('span', {
         class: 'matched-flag',
-        textContent: '● matching now',
+        textContent: 'on the panel now',
         hidden: !isMatched,
     });
 
     const label = make('input', {
         type: 'text',
         value: rule.label ?? '',
-        placeholder: 'what this rule is for',
+        class: 'rule-label',
+        placeholder: 'Name this rule',
+        'aria-label': 'Rule name',
         // `edited` rather than `changed`, as for every field typed into on
         // this tab: a re-render replaces the input and takes the caret with it
         // after one letter. Nothing else on the block depends on these values.
@@ -507,61 +515,37 @@ const ruleCard = (rule, index, context) => {
 
     const head = make('div', { class: 'rule-head' }, [
         make('span', { class: 'keyword', textContent: keywordFor(rule, index, config.flow.length) }),
-        make('div', { style: 'flex:1;min-width:140px' }, [label]),
+        make('div', { class: 'rule-name' }, [label]),
         flag,
-        make('span', { class: 'spacer' }),
-        make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: '↑',
-            disabled: index === 0,
-            title: 'Check this rule earlier',
-            onClick: () => move(-1),
-        }),
-        make('button', {
-            class: 'small',
-            type: 'button',
-            textContent: '↓',
-            disabled: index === config.flow.length - 1,
-            title: 'Check this rule later',
-            onClick: () => move(1),
-        }),
-        make('button', {
-            class: 'small danger',
-            type: 'button',
-            textContent: 'delete',
-            onClick: () => {
-                config.flow.splice(index, 1);
-                context.changed();
-            },
-        }),
+        make('div', { class: 'tools' }, [
+            iconButton('up', 'Check this rule earlier', {
+                disabled: index === 0,
+                onClick: () => move(-1),
+            }),
+            iconButton('down', 'Check this rule later', {
+                disabled: index === config.flow.length - 1,
+                onClick: () => move(1),
+            }),
+            iconButton('trash', 'Delete this rule', {
+                class: 'danger',
+                onClick: () => {
+                    config.flow.splice(index, 1);
+                    context.setStatus(`Deleted “${rule.label || 'a rule'}”. Save to apply.`);
+                    context.changed();
+                },
+            }),
+        ]),
     ]);
 
     const conditions = rule.conditions.map((condition, position) =>
         conditionRow(rule, condition, position, context)
     );
 
-    /**
-     * A loop is the one action that can decline, so saying "nothing below is
-     * reached" would be wrong for it — that is exactly the case the trailing
-     * rule exists to catch.
-     */
-    const fallsThrough = rule.action.do === 'loop';
-    const noConditions = make('p', {
-        class: 'caveat',
-        textContent: fallsThrough
-            ? 'No conditions, so this runs whenever at least one of its members can take a '
-                + 'turn: it has a reading, and its own “show when” matches if it has one. If none '
-                + 'can, the rules below it are tried.'
-            : 'No conditions, so this rule always matches — nothing below it is reached.',
-    });
-
     const node = make('div', { class: isMatched ? 'rule matched' : 'rule' }, [
         head,
         ...conditions,
-        rule.conditions.length === 0 ? noConditions : null,
         matchPickerFor(rule, context),
-        make('div', { class: 'row', style: 'margin-top:8px' }, addConditionButtons(rule, context)),
+        make('div', { class: 'row adders' }, addConditionButtons(rule, context)),
         actionEditor(rule, context),
     ]);
 
@@ -571,7 +555,7 @@ const ruleCard = (rule, index, context) => {
 
 export const renderFlow = (root, context) => {
     const { config } = context;
-    root.className = '';
+    root.className = 'narrow';
     ruleBlocks.clear();
 
     const blocks = [];
@@ -604,16 +588,8 @@ export const renderFlow = (root, context) => {
         },
     });
 
-    const note = make('p', {
-        class: 'caveat',
-        textContent: 'Read top to bottom: the first rule whose conditions match decides, and the '
-            + 'rest are not consulted. A rotation with no readings left is skipped, so it is '
-            + 'worth keeping a rule with no conditions at the bottom.',
-    });
-
     root.append(card('Flow', [
-        note,
         make('div', { class: 'chain' }, blocks),
         make('div', { class: 'row', style: 'margin-top:16px' }, [addRule]),
-    ]));
+    ], FLOW_HELP));
 };
