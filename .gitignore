@@ -1,0 +1,5 @@
+# Live state: each machine keeps its own, and a `git pull` must never touch it.
+# Start from the .example files next to them.
+.env
+panel.config.json
+panel.config.json.tmp

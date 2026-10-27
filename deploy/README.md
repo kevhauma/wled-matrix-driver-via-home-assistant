@@ -5,8 +5,12 @@ logs to the journal. Written for Debian / Ubuntu / Raspberry Pi OS; any distro
 with systemd works the same way.
 
 What the service needs from the machine is small: outbound HTTP to WLED,
-outbound WebSocket to Home Assistant, and nothing inbound. The editor stays on
-loopback and you reach it over SSH (step 6).
+outbound WebSocket to Home Assistant, and inbound TCP on `PORT` (8000) for the
+editor (step 6).
+
+The server runs a `git` checkout. Deploying a new version is `git pull` and a
+restart (see "Updating"). The two files that hold the server's own state,
+`.env` and `panel.config.json`, are gitignored, so a pull never touches them.
 
 ## 1. Install Deno
 
@@ -23,60 +27,64 @@ curl -fsSL https://deno.land/install.sh | sudo DENO_INSTALL=/usr/local sh -s v2.
 
 ## 2. Create the service user and directory
 
-A system user with no login and no home. It must own the project directory,
-not just `panel.config.json`: a save writes `panel.config.json.tmp` and renames
-it over the original, and both need write access to the directory.
+A system user with no login and no home, which only runs the service. The
+checkout belongs to you, so you `git pull` with your own credentials. Its group
+is the service user's:
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin wled-bridge
 ```
 
 ```bash
-sudo install -d -o wled-bridge -g wled-bridge -m 750 /opt/wled-ha-bridge
+sudo install -d -o "$USER" -g wled-bridge -m 2775 /opt/wled-ha-bridge
 ```
 
-## 3. Copy the code
+The directory has to be group-writable. A save writes `panel.config.json.tmp`
+and renames it over the original, and both of those need write access to the
+directory itself, not just to the file. The setgid bit (the `2` in `2775`)
+gives everything created in it the `wled-bridge` group, so the service can read
+what you check out and you can read what it saves.
 
-From your machine, in `wled-ha-bridge/`. This stages the code in your home
-directory on the server; `.env` and `panel.config.json` are excluded because
-they are the server's own state from here on (see "Updating").
+## 3. Clone the code
+
+Clone from wherever you push this repository. For a private repository, give
+your server user read access first, for example a read-only deploy key on
+GitHub.
 
 ```bash
-rsync -av --delete --exclude .git --exclude .env --exclude 'panel.config.json*' ./ you@server:wled-ha-bridge/
+git clone <repo-url> /opt/wled-ha-bridge
 ```
-
-Then on the server, move it into place:
 
 ```bash
-sudo rsync -a --delete --exclude .env --exclude 'panel.config.json*' --chown=wled-bridge:wled-bridge ~/wled-ha-bridge/ /opt/wled-ha-bridge/
+ls -ld /opt/wled-ha-bridge
 ```
 
-Do not `git clone` the repository onto the server as it stands: `.env`, with a
-real Home Assistant token in it, is committed.
+That should still show `drwxrwsr-x you wled-bridge`. If the clone reset it, run
+`sudo chmod 2775 /opt/wled-ha-bridge && sudo chgrp wled-bridge /opt/wled-ha-bridge`.
 
 ## 4. Configure
 
 Write `/opt/wled-ha-bridge/.env` from `.env.example` and fill in `HA_BASE_URL`,
 `HA_TOKEN` and `WLED_IP`. Make a fresh long-lived token for the server rather
-than reusing your laptop's, so either can be revoked alone.
+than reusing your laptop's, so either can be revoked alone. Mode `640` lets the
+service read it through its group, and nobody else read it at all.
 
 ```bash
-sudo -u wled-bridge cp /opt/wled-ha-bridge/.env.example /opt/wled-ha-bridge/.env
+cp /opt/wled-ha-bridge/.env.example /opt/wled-ha-bridge/.env
 ```
 
 ```bash
-sudo -u wled-bridge chmod 600 /opt/wled-ha-bridge/.env
+chmod 640 /opt/wled-ha-bridge/.env
 ```
 
 ```bash
-sudo -u wled-bridge nano /opt/wled-ha-bridge/.env
+nano /opt/wled-ha-bridge/.env
 ```
 
 `panel.config.json` is seeded from `.env` on first start. To keep the flow you
 have already built instead, copy your current one across before starting
-(`scp panel.config.json you@server:` then
-`sudo install -o wled-bridge -g wled-bridge -m 640 ~/panel.config.json /opt/wled-ha-bridge/`).
-An older file version is fine; it is upgraded as it is read.
+(`scp panel.config.json you@server:/opt/wled-ha-bridge/`). An older file
+version is fine; it is upgraded as it is read.
 
 Then check the connection before involving systemd. `doctor` names the failing
 step if there is one:
@@ -121,36 +129,76 @@ and after it comes back, `systemctl status wled-ha-bridge` should say
 
 ## 6. Reach the editor
 
-The server binds `127.0.0.1` on purpose — `PUT /api/config` has no
-authentication — so open an SSH tunnel from your machine:
+The server listens on every interface, so the editor is at
+`http://<server>:8000` from anywhere on the LAN. Saves land in
+`/opt/wled-ha-bridge/panel.config.json` and apply immediately, with no restart.
+
+`PUT /api/config` has no authentication, so anyone who can reach that port can
+rewrite the panel. On a home LAN that may be fine. If it isn't, firewall the
+port to loopback (for example `sudo ufw deny 8000`) and use an SSH tunnel from
+your machine instead:
 
 ```bash
 ssh -N -L 8000:127.0.0.1:8000 you@server
 ```
 
-and browse to http://127.0.0.1:8000 as usual. Saves land in
-`/opt/wled-ha-bridge/panel.config.json` and apply immediately; no restart.
-
-Exposing the editor on the LAN instead means changing the hard-coded
-`hostname` in `server.ts` *and* putting authentication in front of it (a
-reverse proxy with basic auth, at least). Don't do the first without the
-second.
+and browse to http://127.0.0.1:8000.
 
 ## Updating
 
-Repeat step 3 (both `rsync` commands), then:
+Push from your machine, then on the server:
+
+```bash
+git -C /opt/wled-ha-bridge pull --ff-only
+```
 
 ```bash
 sudo systemctl restart wled-ha-bridge
 ```
 
-The excludes are what protect the server's state: `--delete` never removes an
-excluded file, so `.env` and the editor's saved `panel.config.json` survive.
+`.env` and `panel.config.json` are in `.gitignore`, so the pull leaves them
+alone: the editor's saved flow and the server's token survive every deploy.
+`--ff-only` refuses to merge, so a server checkout that has drifted stops
+with an error instead of making a merge commit. Never edit tracked files on
+the server. If a pull refuses because of local changes, `git status` names
+them, and `git checkout -- <file>` discards them.
+
 If you ever copy a `panel.config.json` over by hand, restart afterwards; the
 service only reads it at start-up.
 
-If you change `deploy/wled-ha-bridge.service`, copy it to `/etc/systemd/system/`
-again and run `sudo systemctl daemon-reload` before restarting.
+If the update changes `deploy/wled-ha-bridge.service`, copy it to
+`/etc/systemd/system/` again and run `sudo systemctl daemon-reload` before
+restarting.
+
+### Switching over from an rsync install
+
+An `/opt/wled-ha-bridge` copied in with `rsync` is not a checkout. Keep its two
+state files, put a clone in its place, and put them back:
+
+```bash
+sudo systemctl stop wled-ha-bridge
+```
+
+```bash
+sudo cp /opt/wled-ha-bridge/.env /opt/wled-ha-bridge/panel.config.json ~/
+```
+
+```bash
+sudo mv /opt/wled-ha-bridge /opt/wled-ha-bridge.old
+```
+
+Then do steps 2 (the `install -d` line only) and 3, and:
+
+```bash
+sudo install -o "$USER" -g wled-bridge -m 640 ~/.env ~/panel.config.json /opt/wled-ha-bridge/
+```
+
+```bash
+sudo systemctl start wled-ha-bridge
+```
+
+Once it is running, delete `/opt/wled-ha-bridge.old` and the two copies in your
+home directory. The copy of `.env` holds the token.
 
 ## How it behaves
 
@@ -177,7 +225,7 @@ again and run `sudo systemctl daemon-reload` before restarting.
   boot. `sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald`
   makes them persistent. The bridge logs a line per panel change, which the
   journal's own size cap handles.
-- **`ProtectSystem=strict` makes everything read-only except
+- **`ProtectSystem=strict` makes everything read-only for the service except
   `/opt/wled-ha-bridge` and the cache directory.** If you move the install,
   change `WorkingDirectory` and `ReadWritePaths` together, or the editor's saves
   fail with a permission error while everything else looks fine.
