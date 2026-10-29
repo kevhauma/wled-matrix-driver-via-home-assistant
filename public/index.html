@@ -7,27 +7,29 @@
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-    <header>
-        <h1>wled-ha-bridge</h1>
-        <div class="live" role="status" aria-label="What the panel is doing">
-            <div id="mirror" class="mirror" title="What the panel is showing now"></div>
-            <div class="live-text">
-                <span id="connection" class="badge">connecting</span>
-                <span id="showing" class="showing">&mdash;</span>
+    <div id="top" class="top">
+        <header>
+            <h1>wled-ha-bridge</h1>
+            <div class="live" role="status" aria-label="What the panel is doing">
+                <div id="mirror" class="mirror" title="What the panel is showing now"></div>
+                <div class="live-text">
+                    <span id="connection" class="badge">connecting</span>
+                    <span id="showing" class="showing">&mdash;</span>
+                </div>
             </div>
-        </div>
-        <div class="save">
-            <span id="dirty" class="dirty" hidden>Unsaved changes</span>
-            <button id="save" type="button" disabled title="Save (Ctrl+S)">Save</button>
-        </div>
-    </header>
+            <div class="save">
+                <span id="dirty" class="dirty" hidden>Unsaved changes</span>
+                <button id="save" type="button" disabled title="Save (Ctrl+S)">Save</button>
+            </div>
+        </header>
 
-    <nav class="tabs" role="tablist">
-        <button type="button" role="tab" data-tab="entities" aria-selected="true">Entities</button>
-        <button type="button" role="tab" data-tab="flow" aria-selected="false">Flow</button>
-        <button type="button" role="tab" data-tab="display" aria-selected="false">Display</button>
-        <button type="button" role="tab" data-tab="settings" aria-selected="false">Settings</button>
-    </nav>
+        <nav class="tabs" role="tablist">
+            <button type="button" role="tab" data-tab="entities" aria-selected="true">Entities</button>
+            <button type="button" role="tab" data-tab="flow" aria-selected="false">Flow</button>
+            <button type="button" role="tab" data-tab="display" aria-selected="false">Display</button>
+            <button type="button" role="tab" data-tab="settings" aria-selected="false">Settings</button>
+        </nav>
+    </div>
 
     <main id="panel"></main>
 

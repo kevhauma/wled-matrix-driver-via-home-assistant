@@ -53,6 +53,14 @@ body {
 
 /* --- the header: what the panel is doing, and saving --- */
 
+/* The header and the tabs, kept in view together so Save always is. */
+.top {
+    position: sticky;
+    top: 0;
+    /* Over a picker's list (10), under the toast (50). */
+    z-index: 20;
+}
+
 header {
     display: flex;
     align-items: center;
@@ -377,7 +385,7 @@ main.split {
     /* The preview stays in view while a long display is edited beside it. */
     main.split > :last-child {
         position: sticky;
-        top: 16px;
+        top: calc(var(--top-height, 0px) + 16px);
     }
 }
 

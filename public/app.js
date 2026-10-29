@@ -23,6 +23,7 @@ const STATUS_MILLISECONDS = 5000;
 const element = id => document.getElementById(id);
 
 const dom = {
+    top: element('top'),
     panel: element('panel'),
     status: element('status'),
     save: element('save'),
@@ -61,6 +62,15 @@ const state = {
     selectedFlowTarget: null,
     live: null,
 };
+
+/**
+ * The sticky header wraps onto a second line on a phone, so anything else
+ * that sticks has to be told how tall it is rather than guessing.
+ */
+const topObserver = new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--top-height', `${dom.top.offsetHeight}px`);
+});
+topObserver.observe(dom.top);
 
 let statusTimer;
 
