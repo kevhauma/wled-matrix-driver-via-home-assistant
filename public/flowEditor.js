@@ -191,6 +191,9 @@ const summarise = display => {
     if (display.style === 'byState') {
         return 'by state';
     }
+    if (display.style === 'iconText') {
+        return `icon, ${display.text}`;
+    }
     return display.style === 'bar' ? 'a bar' : 'custom JSON';
 };
 

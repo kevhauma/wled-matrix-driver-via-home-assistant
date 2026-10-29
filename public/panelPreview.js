@@ -1,8 +1,9 @@
 /**
  * A 32x8 mock-up of the panel.
  *
- * Honest about what it can be. The service draws with WLED's own effects, not
- * with pixels, so the device's glyphs cannot be reproduced here. What *is*
+ * Honest about what it can be. The service draws text with WLED's own effects,
+ * not with pixels, so the device's letters cannot be reproduced here — an
+ * icon's pixels can, and are. What *is*
  * modelled is the part that bites: how many characters fit at once, and
  * therefore whether a string sits still or scrolls. Letters are drawn one to a
  * fixed cell, the same width WLED's font 0 uses, so the character count and the
@@ -96,6 +97,52 @@ export const createPanelPreview = () => {
         }
     };
 
+    /**
+     * The picture as it is, and the text over it the way the device blends
+     * it: Lighten, so a black background lets the picture through. Letters
+     * sit where `fonts.ts` says WLED puts them, though their shapes are still
+     * the browser's.
+     */
+    const drawIconText = ({ pixels, textStart, layout, color, speed }) => {
+        context.globalCompositeOperation = 'source-over';
+        drawGrid();
+        for (let row = 0; row < ROWS; row += 1) {
+            for (let column = 0; column < COLUMNS; column += 1) {
+                const pixel = pixels[row * COLUMNS + column];
+                if (pixel === '000000') {
+                    continue;
+                }
+                context.fillStyle = `#${pixel}`;
+                context.fillRect(column * SCALE, row * SCALE, SCALE, SCALE);
+            }
+        }
+
+        const columns = COLUMNS - textStart;
+        const scrolls = layout.motion === 'across';
+        const pixelsPerFrame = 0.02 + (speed / 255) * 0.12;
+        // WLED centres text that fits; otherwise it enters from the right edge.
+        const left = scrolls
+            ? textStart + columns - ((frame * pixelsPerFrame) % (layout.width + columns))
+            : textStart + Math.trunc((columns - layout.width) / 2);
+        const visibleHeight = Math.min(layout.height, ROWS);
+
+        context.save();
+        context.beginPath();
+        context.rect(textStart * SCALE, 0, columns * SCALE, canvas.height);
+        context.clip();
+        context.globalCompositeOperation = 'lighten';
+        context.fillStyle = toCss(color);
+        context.textBaseline = 'middle';
+        context.textAlign = 'center';
+        context.font = `600 ${Math.round(SCALE * visibleHeight * 0.95)}px ui-monospace, Menlo, monospace`;
+        const middle = (layout.top + layout.height / 2) * SCALE;
+        for (const glyph of layout.glyphs) {
+            const x = (left + glyph.x + glyph.width / 2) * SCALE;
+            context.fillText(glyph.character, x, middle, Math.max(1, glyph.width) * SCALE);
+        }
+        context.restore();
+    };
+
     const paint = () => {
         if (current === null) {
             drawGrid();
@@ -107,6 +154,10 @@ export const createPanelPreview = () => {
         }
         if (current.kind === 'bar') {
             drawBar(current);
+            return;
+        }
+        if (current.kind === 'iconText') {
+            drawIconText(current);
             return;
         }
         drawText(current);
@@ -124,9 +175,10 @@ export const createPanelPreview = () => {
         show: next => {
             current = next;
             frame = 0;
-            const needsAnimation = next !== null
-                && next.kind === 'text'
-                && next.text.length > next.visible;
+            const needsAnimation = next !== null && (
+                next.kind === 'text' && next.text.length > next.visible
+                || next.kind === 'iconText' && next.layout.motion === 'across'
+            );
             cancelAnimationFrame(animation);
             if (needsAnimation) {
                 animation = requestAnimationFrame(loop);

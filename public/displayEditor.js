@@ -1,6 +1,8 @@
 import { card, field, fromHex, iconButton, make, option, sliderField, toHex } from '/dom.js';
 import { postJson, requestJson } from '/api.js';
 import { createLocalPicker } from '/picker.js';
+import { createIconPainter } from '/iconPainter.js';
+import { decodeLedEntries } from '/ledEntries.js';
 import { createPanelPreview } from '/panelPreview.js';
 
 /**
@@ -105,6 +107,9 @@ const plainOf = display => display.style === 'byState' ? display.otherwise : dis
 
 /** A custom display's segments live in its body, so this has to dig one out. */
 const segmentIdOf = display => {
+    if (display.style === 'iconText') {
+        return 0;
+    }
     if (display.style !== 'custom') {
         return display.segmentId;
     }
@@ -131,6 +136,62 @@ const customSeed = (display, segmentId, color) => ({
     }],
 });
 
+const PANEL_COLUMNS = 32;
+const PANEL_ROWS = 8;
+
+/** The names in `fonts.ts`, which this cannot import either. */
+const FONT_NAMES = ['tom-thumb, 6 high', 'TinyUnicode', 'console 6x8', 'c64esque', '5x12, cropped'];
+
+/** Which font a raw `c2` picks: WLED maps 0-255 onto 0-4, truncating. */
+const fontOfSlider = slider => {
+    const clamped = Math.max(0, Math.min(255, Number(slider) || 0));
+    return Math.trunc(clamped * 4 / 255);
+};
+
+/**
+ * A custom body written the way every glyph was before this style existed —
+ * pixels in one segment's `i`, a segment name in another — read back into an
+ * icon and its text, so switching one over keeps the picture. A pixel segment
+ * with bounds of its own is indexed across those bounds, not the panel.
+ */
+const iconTextFromCustom = display => {
+    if (display.style !== 'custom') {
+        return undefined;
+    }
+    const segments = Array.isArray(display.payload.seg) ? display.payload.seg : [];
+    const picture = segments.find(segment => Array.isArray(segment?.i));
+    const named = segments.find(segment => segment !== picture && typeof segment?.n === 'string');
+    if (picture === undefined || named === undefined) {
+        return undefined;
+    }
+
+    const left = picture.start ?? 0;
+    const width = (picture.stop ?? PANEL_COLUMNS) - left;
+    const top = picture.startY ?? 0;
+    const own = decodeLedEntries(picture.i, width * PANEL_ROWS);
+    const pixels = new Array(PANEL_COLUMNS * PANEL_ROWS).fill('000000');
+    own.forEach((color, index) => {
+        const row = top + Math.floor(index / width);
+        const column = left + (index % width);
+        if (row < PANEL_ROWS && column < PANEL_COLUMNS) {
+            pixels[row * PANEL_COLUMNS + column] = color;
+        }
+    });
+
+    const firstColour = named.col?.[0];
+    const textStart = Math.max(1, Math.min(PANEL_COLUMNS - 1, named.start ?? 8));
+    return {
+        style: 'iconText',
+        pixels,
+        textStart,
+        color: Array.isArray(firstColour) ? firstColour.slice(0, 3) : WHITE,
+        speed: named.sx ?? 128,
+        text: named.n === '' ? '{{value}}' : named.n,
+        font: fontOfSlider(named.c2),
+        yOffset: named.ix ?? 128,
+    };
+};
+
 /**
  * Keeping the segment and the colour across a style change: being made to pick
  * a colour again because you changed how the value is drawn reads as the
@@ -150,6 +211,15 @@ const toStyle = (style, current) => {
     }
     if (style === 'text') {
         return { style: 'text', segmentId, color, speed: 70, text: '{{value}}' };
+    }
+    if (style === 'iconText') {
+        const converted = iconTextFromCustom(display);
+        if (converted !== undefined) {
+            return converted;
+        }
+        const text = display.style === 'text' ? display.text : '{{value}}';
+        const pixels = new Array(PANEL_COLUMNS * PANEL_ROWS).fill('000000');
+        return { style: 'iconText', pixels, textStart: 9, color, speed: 128, text, font: 0, yOffset: 128 };
     }
     const payload = customSeed(display, segmentId, color);
     return { style: 'custom', payload };
@@ -438,6 +508,7 @@ const displayFields = (view, context, refresh) => {
     const styles = [
         option('text', 'scrolling text', display.style === 'text'),
         isBuiltin ? null : option('bar', 'bar', display.style === 'bar'),
+        option('iconText', 'icon and text', display.style === 'iconText'),
         option('custom', 'custom WLED JSON', display.style === 'custom'),
         // A case cannot itself choose by state; the validator refuses it too.
         view.nested ? null : option('byState', 'depends on its state', display.style === 'byState'),
@@ -476,6 +547,84 @@ const displayFields = (view, context, refresh) => {
         ]);
     }
 
+    const colour = make('input', {
+        type: 'color',
+        value: toHex(display.color),
+        onInput: event => {
+            display.color = fromHex(event.target.value);
+            edited();
+        },
+    });
+
+    /**
+     * The template gets a row of its own: it is the one field here you type
+     * into, and the placeholders that go in it sit right under it.
+     */
+    const templateRow = () => {
+        const template = make('input', {
+            type: 'text',
+            class: 'mono',
+            value: display.text,
+            placeholder: '{{value}}',
+            onInput: event => {
+                display.text = event.target.value;
+                edited();
+            },
+        });
+        return make('div', { class: 'template' }, [field('text', template), placeholderChips(entity, template)]);
+    };
+
+    if (display.style === 'iconText') {
+        const painter = createIconPainter({
+            key: view.key,
+            pixels: display.pixels,
+            textStart: display.textStart,
+            onChange: edited,
+        });
+        const textStart = make('input', {
+            type: 'number',
+            min: '1',
+            max: String(PANEL_COLUMNS - 1),
+            value: display.textStart,
+            onInput: event => {
+                const column = Number(event.target.value);
+                // Half-typed or out of range is left as it was, as a threshold is.
+                if (!Number.isInteger(column) || column < 1 || column > PANEL_COLUMNS - 1) {
+                    return;
+                }
+                display.textStart = column;
+                painter.setTextStart(column);
+                edited();
+            },
+        });
+        const font = make('select', {
+            onChange: event => {
+                display.font = Number(event.target.value);
+                edited();
+            },
+        }, FONT_NAMES.map((name, index) => option(String(index), `${index} — ${name}`, index === display.font)));
+
+        return make('div', { class: 'display-fields' }, [
+            painter.node,
+            templateRow(),
+            make('div', { class: 'fields' }, [
+                format,
+                field('drawn as', stylePicker),
+                field('text starts at column', textStart),
+                field('colour', colour),
+                field('font', font),
+                sliderField('scroll speed', display.speed, value => {
+                    display.speed = value;
+                    edited();
+                }),
+                sliderField('y offset', display.yOffset, value => {
+                    display.yOffset = value;
+                    edited();
+                }),
+            ].filter(Boolean)),
+        ]);
+    }
+
     const segment = make('input', {
         type: 'number',
         min: '0',
@@ -483,15 +632,6 @@ const displayFields = (view, context, refresh) => {
         value: display.segmentId,
         onInput: event => {
             display.segmentId = Number(event.target.value);
-            edited();
-        },
-    });
-
-    const colour = make('input', {
-        type: 'color',
-        value: toHex(display.color),
-        onInput: event => {
-            display.color = fromHex(event.target.value);
             edited();
         },
     });
@@ -524,24 +664,7 @@ const displayFields = (view, context, refresh) => {
         return fieldGrid;
     }
 
-    /**
-     * The template gets a row of its own: it is the one field here you type
-     * into, and the placeholders that go in it sit right under it.
-     */
-    const template = make('input', {
-        type: 'text',
-        class: 'mono',
-        value: display.text,
-        placeholder: '{{value}}',
-        onInput: event => {
-            display.text = event.target.value;
-            edited();
-        },
-    });
-    return make('div', { class: 'display-fields' }, [
-        make('div', { class: 'template' }, [field('text', template), placeholderChips(entity, template)]),
-        fieldGrid,
-    ]);
+    return make('div', { class: 'display-fields' }, [templateRow(), fieldGrid]);
 };
 
 /**
@@ -613,6 +736,22 @@ const refreshPreview = async (view, sample, nodes, context) => {
             // Nothing honest to draw: the mock-up knows one scrolling string or
             // one bar across the whole panel, and a custom body is neither.
             preview.show(null);
+            return;
+        }
+
+        if (display.style === 'iconText') {
+            const columns = PANEL_COLUMNS - display.textStart;
+            const movement = result.textLayout.motion === 'across' ? 'scrolls' : 'fits';
+            nodes.readout.textContent = `"${result.text}" — ${result.textLayout.width} of the ${columns} `
+                + `columns from ${display.textStart}, so it ${movement}`;
+            preview.show({
+                kind: 'iconText',
+                pixels: display.pixels,
+                textStart: display.textStart,
+                layout: result.textLayout,
+                color: display.color,
+                speed: display.speed,
+            });
             return;
         }
 
@@ -836,6 +975,14 @@ const STYLE_HELP = {
         'A bar fills from the left in proportion to the reading, so it needs an entity read '
             + 'as a percentage.',
     ],
+    iconText: [
+        'A picture on segment 0, across the whole panel, and the template on segment 1 from '
+            + 'the column you choose. The text is blended over the picture with Lighten, so the '
+            + 'picture may run on under it: wherever the text is unlit, the picture shows.',
+        'Paint with the mouse; b, e, f and i pick the tool while the painter has focus, and '
+            + 'Ctrl/Cmd+Z undoes a stroke. Switching a custom body that draws pixels and a name '
+            + 'to this style reads its picture and text back in.',
+    ],
     custom: [
         'A whole WLED /json/state body. Segments other entities use are switched off for '
             + 'you; "on" and "bri" are filled in only if you leave them out. Every "seg" entry '
@@ -848,8 +995,8 @@ const STYLE_HELP = {
             + '“otherwise” when none does. “is one of” compares exactly — “sunny”, '
             + '“clear-night”, “playing”. “is above” and “is below” read the state as a number; '
             + 'one that is not a number matches neither.',
-        'A picture for a state is a custom WLED JSON case drawing pixels with the segment’s '
-            + '"i" field — the device’s fonts are ASCII only.',
+        'A picture for a state is an “icon and text” case — the device’s fonts are ASCII '
+            + 'only, so a picture is pixels.',
     ],
 };
 
@@ -864,7 +1011,9 @@ const displayHelp = view => {
         ...STYLE_HELP[style],
         style === 'bar' ? null : 'The placeholders:',
         style === 'bar' ? null : placeholderHelp(),
-        style === 'custom' ? null : 'The segment is the WLED segment it draws on; 0 is the whole panel.',
+        style === 'custom' || style === 'iconText'
+            ? null
+            : 'The segment is the WLED segment it draws on; 0 is the whole panel.',
     ].filter(Boolean);
 };
 

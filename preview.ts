@@ -1,10 +1,12 @@
 import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
 import { PanelEntity, PlainDisplay, WledDisplay } from './entities.ts';
+import { layoutText, TextLayout } from './fonts.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
 import { readBuiltin, readEntity, Reading } from './readings.ts';
 import {
     MAX_TEXT_LENGTH,
     PANEL_COLUMNS,
+    PANEL_ROWS,
     resolveDisplay,
     segmentIdsOf,
     toDisplayText,
@@ -66,6 +68,12 @@ export type Preview = {
      * for `otherwise`. Absent for any other display.
      */
     caseIndex: number | undefined,
+    /**
+     * An `iconText` display's text, laid out in the columns from its
+     * `textStart` in the font it names. Absent for every other style: the plain text style
+     * pins font 0, whose fixed width `visible` already describes.
+     */
+    textLayout: TextLayout | undefined,
     warnings: PreviewWarning[],
 };
 
@@ -204,7 +212,17 @@ export const toPreview = (
         : { show: 'entity' as const, entityId, display: override };
     const payload = toWledPayload({ decision, entities, flowDisplays, readings, states, brightness });
 
-    const visible = visibleLetters(PANEL_COLUMNS);
+    const textColumns = display.style === 'iconText' ? PANEL_COLUMNS - display.textStart : PANEL_COLUMNS;
+    const textLayout = display.style !== 'iconText' ? undefined : layoutText({
+        text,
+        font: display.font,
+        yOffset: display.yOffset,
+        columns: textColumns,
+        rows: PANEL_ROWS,
+    });
+    const visible = textLayout === undefined
+        ? visibleLetters(textColumns)
+        : textLayout.glyphs.filter(glyph => glyph.x + glyph.width <= textColumns).length;
     const warnings: PreviewWarning[] = [];
     const customSegments: CustomSegmentPreview[] = [];
 
@@ -242,7 +260,7 @@ export const toPreview = (
         }
     }
 
-    if (display.style === 'text') {
+    if (display.style === 'text' || display.style === 'iconText') {
         /**
          * Compared against the fullest form `toDisplayText` had to choose
          * from, not against the typed value: a temperature is *meant* to come
@@ -255,7 +273,8 @@ export const toPreview = (
             warnings.push('shortened');
         }
         // WLED centres text that fits and scrolls only what does not.
-        if (text.length > visible) {
+        const scrolls = textLayout === undefined ? text.length > visible : textLayout.motion === 'across';
+        if (scrolls) {
             warnings.push('scrolls');
         }
     }
@@ -272,6 +291,7 @@ export const toPreview = (
         customSegments,
         display,
         caseIndex,
+        textLayout,
         warnings,
     };
 };

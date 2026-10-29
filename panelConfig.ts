@@ -10,7 +10,9 @@ import {
     WledDisplay,
 } from './entities.ts';
 import { Action, Condition, FlowRule, LoopMember, MemberWhen } from './flow.ts';
+import { TEXT_FONTS, TextFont } from './fonts.ts';
 import { findPlaceholders, isPlaceholder, PLACEHOLDER_NAMES } from './template.ts';
+import { PANEL_COLUMNS, PANEL_ROWS } from './wled.ts';
 
 /**
  * The document the editor saves and the service reads: which entities exist,
@@ -175,6 +177,19 @@ const asOneOf = <T extends string>(value: unknown, path: string, allowed: readon
     return found;
 };
 
+const asWholeNumberInRange = (value: unknown, path: string, low: number, high: number): number => {
+    const number = asNumberInRange(value, path, low, high);
+    if (!Number.isInteger(number)) {
+        throw fail(path, 'a whole number', value);
+    }
+    return number;
+};
+
+const asFont = (value: unknown, path: string): TextFont => {
+    const font = asWholeNumberInRange(value, path, 0, TEXT_FONTS.length - 1);
+    return font as TextFont;
+};
+
 const asTimeZone = (value: unknown, path: string): string => {
     const text = asString(value, path);
     if (text === '' || isTimeZone(text)) {
@@ -282,7 +297,24 @@ const parseCustomPayload = (value: unknown, path: string): Record<string, unknow
     return record;
 };
 
-/** Where a display keeps its placeholders, if it has any. */
+const PIXEL_PATTERN = /^[0-9a-f]{6}$/i;
+
+const parsePixels = (value: unknown, path: string): string[] => {
+    const rawPixels = asArray(value, path);
+    const expected = PANEL_COLUMNS * PANEL_ROWS;
+    if (rawPixels.length !== expected) {
+        throw fail(path, `${expected} pixels, the whole ${PANEL_COLUMNS}x${PANEL_ROWS} panel`, rawPixels.length);
+    }
+    return rawPixels.map((pixel, index) => {
+        const pixelPath = `${path}[${index}]`;
+        const text = asString(pixel, pixelPath);
+        if (!PIXEL_PATTERN.test(text)) {
+            throw fail(pixelPath, "a colour like 'FFC800'", pixel);
+        }
+        return text.toUpperCase();
+    });
+};
+
 /** A display's plain parts with the path to each: itself, or a `byState` one's cases. */
 const plainDisplaysOf = (
     display: WledDisplay,
@@ -299,7 +331,7 @@ const plainDisplaysOf = (
 };
 
 const templateOf = (display: PlainDisplay, path: string): { value: unknown, path: string } | undefined => {
-    if (display.style === 'text') {
+    if (display.style === 'text' || display.style === 'iconText') {
         return { value: display.text, path: `${path}.text` };
     }
     if (display.style === 'custom') {
@@ -417,15 +449,33 @@ const parsePlainDisplay = (value: unknown, path: string): PlainDisplay => {
     const record = asRecord(value, path);
     // Named, because the generic complaint would not say why it is refused.
     if (record.style === 'byState') {
-        throw fail(`${path}.style`, 'text, bar or custom — a case cannot itself depend on the state', record.style);
+        throw fail(
+            `${path}.style`,
+            'text, bar, iconText or custom — a case cannot itself depend on the state',
+            record.style,
+        );
     }
-    const style = asOneOf(record.style, `${path}.style`, ['text', 'bar', 'custom'] as const);
+    const style = asOneOf(record.style, `${path}.style`, ['text', 'bar', 'iconText', 'custom'] as const);
 
     // Checked before `segmentId` and `color`, which a custom display does not
     // have: its segments and its colours are inside the body it owns.
     if (style === 'custom') {
         const payload = parseCustomPayload(record.payload, `${path}.payload`);
         return { style, payload };
+    }
+
+    // Its segments are fixed, so it has no `segmentId` either.
+    if (style === 'iconText') {
+        const pixels = parsePixels(record.pixels, `${path}.pixels`);
+        // At least a column for the text, and at least one for the picture.
+        const textStart = asWholeNumberInRange(record.textStart, `${path}.textStart`, 1, PANEL_COLUMNS - 1);
+        const color = asColor(record.color, `${path}.color`);
+        const speed = asNumberInRange(record.speed, `${path}.speed`, 0, 255);
+        const text = asNonEmptyString(record.text, `${path}.text`);
+        checkPlaceholders(text, `${path}.text`);
+        const font = asFont(record.font, `${path}.font`);
+        const yOffset = asNumberInRange(record.yOffset, `${path}.yOffset`, 0, 255);
+        return { style, pixels, textStart, color, speed, text, font, yOffset };
     }
 
     const segmentId = asNumberInRange(record.segmentId, `${path}.segmentId`, 0, 31);
@@ -460,7 +510,7 @@ const refuseBarOnBuiltin = (entityId: string, display: WledDisplay, path: string
     }
     for (const plain of plainDisplaysOf(display, path)) {
         if (plain.display.style === 'bar') {
-            throw fail(`${plain.path}.style`, `'text' or 'custom' for ${entityId}`, 'bar');
+            throw fail(`${plain.path}.style`, `'text', 'iconText' or 'custom' for ${entityId}`, 'bar');
         }
     }
 };

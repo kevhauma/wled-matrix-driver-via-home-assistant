@@ -1282,3 +1282,44 @@ textarea.json:focus {
         min-width: 0;
     }
 }
+
+.painter {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 16px;
+    outline: none;
+}
+
+canvas.painter-grid {
+    width: 100%;
+    max-width: 512px;
+    aspect-ratio: 4 / 1;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.painter-tools button.active {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.painter-tools input[type='color'] {
+    width: 36px;
+    height: 28px;
+    padding: 0;
+}
+
+.swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+button.swatch {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 4px;
+}

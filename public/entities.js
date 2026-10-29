@@ -193,12 +193,14 @@ const kindCell = (entity, context) => {
         onChange: event => {
             entity.kind = event.target.value;
             // A bar needs a number, so switching to text would leave an
-            // unreadable display behind. A custom body or a choice by state
-            // is hand-written and is never replaced from under you — its
-            // placeholders all have a defined value for every kind.
+            // unreadable display behind. A custom body, a painted icon or a
+            // choice by state is made by hand and is never replaced from
+            // under you — its placeholders all have a defined value for
+            // every kind.
             const wantsBar = entity.kind === 'percent';
             const isBar = entity.display.style === 'bar';
             const isHandWritten = entity.display.style === 'custom'
+                || entity.display.style === 'iconText'
                 || entity.display.style === 'byState';
             if (!isHandWritten && wantsBar !== isBar) {
                 entity.display = defaultDisplay(entity.kind);

@@ -179,7 +179,7 @@ Deno.test('a built-in item reads as text and cannot be drawn as a bar', () => {
     });
 
     assertSame(asPercent.includes('config.entities[0].kind'), true, `as a percent: ${asPercent}`);
-    assertSame(asBar.includes("'text' or 'custom'"), true, `as a bar: ${asBar}`);
+    assertSame(asBar.includes("'text', 'iconText' or 'custom'"), true, `as a bar: ${asBar}`);
 });
 
 Deno.test('a built-in item survives the validator with its format intact', () => {
@@ -468,4 +468,48 @@ Deno.test('a loop member’s own dwell survives validation, and one out of range
     assertSame(own, 30, 'kept as written');
     assertSame(inherited, undefined, 'absent stays absent');
     assertSame(zero.includes('members[0].dwellSeconds'), true, zero);
+});
+
+const ICON_TEXT_DISPLAY = {
+    style: 'iconText',
+    pixels: new Array(256).fill('000000'),
+    textStart: 8,
+    color: [255, 255, 255],
+    speed: 128,
+    text: '{{value}}',
+    font: 1,
+    yOffset: 128,
+};
+
+const iconTextRefusal = (changes: Record<string, unknown>): string =>
+    entityRefusal({ entityId: 'sensor.a', kind: 'text', display: { ...ICON_TEXT_DISPLAY, ...changes } });
+
+Deno.test('an icon beside text survives validation, its pixels upper-cased', () => {
+    const pixels = ['ffc800', ...ICON_TEXT_DISPLAY.pixels.slice(1)];
+    const parsed = parsePanelConfig(withEntity({
+        entityId: 'sensor.a',
+        kind: 'text',
+        display: { ...ICON_TEXT_DISPLAY, pixels },
+    }));
+    const display = parsed.entities[0].display;
+
+    assertSame(display.style, 'iconText', 'its style');
+    assertSame(display.style === 'iconText' && display.pixels[0], 'FFC800', 'upper-cased');
+    assertSame(display.style === 'iconText' && display.textStart, 8, 'its text start');
+});
+
+Deno.test('an icon beside text refuses a part panel, a bad colour, no room for text, and font 5', () => {
+    const short = iconTextRefusal({ pixels: ['000000'] });
+    const badColour = iconTextRefusal({ pixels: ['#FFC800', ...ICON_TEXT_DISPLAY.pixels.slice(1)] });
+    const noRoom = iconTextRefusal({ textStart: 32 });
+    const noPicture = iconTextRefusal({ textStart: 0 });
+    const font = iconTextRefusal({ font: 5 });
+    const emptyText = iconTextRefusal({ text: '' });
+
+    assertSame(short.includes('display.pixels must be 256 pixels'), true, short);
+    assertSame(badColour.includes('display.pixels[0]'), true, badColour);
+    assertSame(noRoom.includes('display.textStart'), true, noRoom);
+    assertSame(noPicture.includes('display.textStart'), true, noPicture);
+    assertSame(font.includes('display.font'), true, font);
+    assertSame(emptyText.includes('display.text'), true, emptyText);
 });

@@ -1,4 +1,6 @@
 import { matchesStateCase, PanelEntity, PlainDisplay, RGBColor, WledDisplay } from './entities.ts';
+import { fontSliderOf } from './fonts.ts';
+import { encodeLedEntries } from './ledEntries.ts';
 import { Reading, UNAVAILABLE } from './readings.ts';
 import { EntityValues, fillTemplate, PlaceholderValues } from './template.ts';
 import { Decision } from './whatToShow.ts';
@@ -57,6 +59,19 @@ const Y_OFFSET = 128;
 const BAR_GEOMETRY = { m12: 1, tp: true, rY: true };
 
 const BLACK: RGBColor = [0, 0, 0];
+
+/**
+ * Where an `iconText` display draws: the segments the hand-written glyph
+ * bodies used, which is the arrangement that has been seen on the panel.
+ */
+const ICON_SEGMENT_ID = 0;
+const ICON_TEXT_SEGMENT_ID = 1;
+
+/**
+ * `bm` 8 is Lighten (WLED 16+): the text segment lies over the icon's, and
+ * wherever the text is black the icon's own pixels show through.
+ */
+const LIGHTEN_BLEND_MODE = 8;
 
 /** WLED's `DEFAULT_COLOR`, which a segment created over JSON starts with. */
 const WLED_ORANGE: RGBColor = [255, 160, 0];
@@ -191,9 +206,10 @@ const toReadingValues = (reading: Reading): Omit<PlaceholderValues, 'value'> => 
     return { percent, degrees, unit, title: toAscii(rawTitle), artist: toAscii(rawArtist) };
 };
 
-/** The two styles this file draws itself. `custom` writes its own body. */
-type DrawnDisplay = Exclude<PlainDisplay, { style: 'custom' }>;
-type TextDisplay = Extract<PlainDisplay, { style: 'text' }>;
+/** The single-segment styles this file draws itself. */
+type DrawnDisplay = Extract<PlainDisplay, { style: 'text' | 'bar' }>;
+/** The styles whose segment name is their own template. */
+type TextDisplay = Extract<PlainDisplay, { style: 'text' | 'iconText' }>;
 
 /**
  * The display that applies for this raw state: a `byState` display's first
@@ -240,7 +256,7 @@ export const toDisplayText = (
     reading: Reading,
     others: EntityValues,
 ): string => {
-    if (display.style !== 'text') {
+    if (display.style !== 'text' && display.style !== 'iconText') {
         return toPlainText(reading);
     }
     const options = toTextOptions(display, reading, others);
@@ -259,6 +275,9 @@ export const segmentIdsOf = (display: WledDisplay): number[] => {
     if (display.style === 'byState') {
         const nested = [...display.cases.map(candidate => candidate.display), display.otherwise];
         return nested.flatMap(segmentIdsOf);
+    }
+    if (display.style === 'iconText') {
+        return [ICON_SEGMENT_ID, ICON_TEXT_SEGMENT_ID];
     }
     if (display.style !== 'custom') {
         return [display.segmentId];
@@ -326,6 +345,40 @@ const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues
         c2: FONT_SIZE_SLIDER,
         col: [display.color, BLACK, display.color],
     };
+};
+
+type IconTextDisplay = Extract<PlainDisplay, { style: 'iconText' }>;
+
+const toIconTextSegments = (
+    display: IconTextDisplay,
+    reading: Reading,
+    others: EntityValues,
+): WledPayload[] => {
+    const entries = encodeLedEntries(display.pixels);
+    const text = toDisplayText(display, reading, others);
+    return [
+        {
+            id: ICON_SEGMENT_ID,
+            // Frozen, so the effect never runs; 122 is what the hand-written
+            // bodies had, and nothing else has been tried on the panel.
+            frz: true,
+            fx: SCROLLING_TEXT_EFFECT_ID,
+            i: entries,
+        },
+        {
+            id: ICON_TEXT_SEGMENT_ID,
+            start: display.textStart,
+            fx: SCROLLING_TEXT_EFFECT_ID,
+            n: text,
+            sx: display.speed,
+            ix: display.yOffset,
+            // Trail: none, or a scrolling reading smears.
+            c1: 0,
+            c2: fontSliderOf(display.font),
+            bm: LIGHTEN_BLEND_MODE,
+            col: [display.color, BLACK, display.color],
+        },
+    ];
 };
 
 export type PayloadInput = {
@@ -398,6 +451,12 @@ export const toWledPayload = (
          * a body that names its own `bri` keeps it.
          */
         return { on: true, bri: brightness, ...filled, seg: [...own, ...others] };
+    }
+
+    if (display.style === 'iconText') {
+        const segments = toIconTextSegments(display, reading, otherValues);
+        const own = segments.map(toResetSegment);
+        return { on: true, bri: brightness, seg: [...own, ...others] };
     }
 
     const drawn = toSegment(display, reading, otherValues);

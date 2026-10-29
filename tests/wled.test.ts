@@ -1,6 +1,15 @@
-import { EntityIds, PANEL_ENTITIES, PanelEntity, PlainDisplay } from '../entities.ts';
+import { EntityIds, PANEL_ENTITIES, PanelEntity, PlainDisplay, RGBColor } from '../entities.ts';
+import { decodeLedEntries } from '../public/ledEntries.js';
 import { Reading } from '../readings.ts';
-import { createWledTarget, resolveDisplay, toDisplayText, toEntityValues, toWledPayload } from '../wled.ts';
+import {
+    createWledTarget,
+    resolveDisplay,
+    segmentIdsOf,
+    toDisplayText,
+    toEntityValues,
+    toWledPayload,
+} from '../wled.ts';
+import { PANEL_LEDS, SOLAR } from './glyphFixtures.ts';
 import { Decision } from '../whatToShow.ts';
 
 const assertSame = (actual: unknown, expected: unknown, message: string): void => {
@@ -507,4 +516,75 @@ Deno.test('a case can pick on the state as a number, and a state that is not one
     assertSame(resolveDisplay(display, '-3'), cold, 'below');
     assertSame(resolveDisplay(display, 'unavailable'), display.otherwise, 'not a number');
     assertSame(resolveDisplay(display, ''), display.otherwise, 'and empty is not zero');
+});
+
+const solarDisplay = {
+    style: 'iconText' as const,
+    pixels: decodeLedEntries(SOLAR, PANEL_LEDS) as string[],
+    // The picture runs a column under the text, which Lighten allows.
+    textStart: 8,
+    color: [230, 255, 244] as RGBColor,
+    speed: 128,
+    text: '{{value}}',
+    font: 1 as const,
+    yOffset: 161,
+};
+
+const iconTextPayload = (display: PlainDisplay, others: PanelEntity[] = []) =>
+    toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.solar' },
+        entities: [{ entityId: 'sensor.solar', kind: 'text', display }, ...others],
+        flowDisplays: [],
+        readings: new Map([['sensor.solar', { kind: 'text', candidates: ['1.2kW'], isPlaying: false } as Reading]]),
+        states: new Map([['sensor.solar', '1.2kW']]),
+        brightness: BRIGHTNESS,
+    });
+
+Deno.test('an icon beside text sends the glyph exactly as the hand-written body did', () => {
+    const segments = iconTextPayload(solarDisplay).seg as Segment[];
+
+    assertSame(segments[0].id, 0, 'the icon on segment 0');
+    assertSame(JSON.stringify(segments[0].i), JSON.stringify(SOLAR), 'its pixels, byte for byte');
+    assertSame(segments[0].frz, true, 'frozen, so the effect does not draw over it');
+    assertSame(segments[0].stop, 32, 'across the whole panel');
+});
+
+Deno.test('an icon beside text starts the text where it says, in its own font and offset', () => {
+    const text = (iconTextPayload(solarDisplay).seg as Segment[])[1];
+
+    assertSame(text.id, 1, 'the text on segment 1');
+    assertSame(text.start, 8, 'from its own start');
+    assertSame(text.stop, 32, 'to the edge');
+    assertSame(text.n, '1.2kW', 'the template, filled');
+    assertSame(text.fx, 122, 'Scrolling Text');
+    assertSame(text.c2, 64, 'font 1, at the lowest c2 that picks it');
+    assertSame(text.ix, 161, 'the Y offset');
+    assertSame(text.c1, 0, 'no trail');
+    assertSame(text.bm, 8, 'blended with Lighten over the icon');
+    assertSame(JSON.stringify((text.col as unknown[])[0]), JSON.stringify([230, 255, 244]), 'its colour');
+});
+
+Deno.test('an icon beside text switches off the other segments, and owns 0 and 1', () => {
+    const elsewhere: PanelEntity = {
+        entityId: 'sensor.other',
+        kind: 'text',
+        display: { style: 'text', segmentId: 2, color: [1, 2, 3], speed: 1, text: '{{value}}' },
+    };
+    const segments = iconTextPayload(solarDisplay, [elsewhere]).seg as Segment[];
+    const off = segments.filter(segment => segment.on === false).map(segment => segment.id);
+
+    assertSame(off.join(' '), '2', 'only the other entity’s segment');
+    assertSame(segmentIdsOf(solarDisplay).join(' '), '0 1', 'its own');
+});
+
+Deno.test('an icon beside text works as a case of a display chosen by state', () => {
+    const display = {
+        style: 'byState' as const,
+        cases: [{ test: 'is' as const, states: ['1.2kW'], display: solarDisplay }],
+        otherwise: textDisplay('{{value}}'),
+    };
+    const segments = iconTextPayload(display as unknown as PlainDisplay).seg as Segment[];
+
+    assertSame(JSON.stringify(segments[0].i), JSON.stringify(SOLAR), 'the case’s glyph');
+    assertSame(segments[1].start, 8, 'and its text');
 });

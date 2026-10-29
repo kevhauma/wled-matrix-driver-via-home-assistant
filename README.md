@@ -45,6 +45,8 @@ Then open **http://127.0.0.1:8000** to configure it.
 | [`readings.ts`](readings.ts) | Parses one entity's state into a percent, a temperature or text |
 | [`whatToShow.ts`](whatToShow.ts) | The one decision: what belongs on the panel right now |
 | [`wled.ts`](wled.ts) | Turns that decision into one `/json/state` body, and sends it |
+| [`ledEntries.ts`](ledEntries.ts) | An icon's pixels as WLED's `i` field; `public/ledEntries.js` reads one back |
+| [`fonts.ts`](fonts.ts) | WLED 16's five text fonts, so the preview can lay text out in them |
 | [`template.ts`](template.ts) | The `{{...}}` placeholders a custom display's own JSON carries |
 | [`bridge.ts`](bridge.ts) | The daemon: the tick, the queue, and applying a saved config live |
 | [`server.ts`](server.ts) | Static files out of `public/`, and six JSON endpoints |
@@ -164,37 +166,47 @@ as a number: `{ "test": "above", "value": 25 }`, `{ "test": "below", "value":
 Order the thresholds the way you read them: `above 30` before `above 20`; the
 other way round, the second could never be drawn and is refused.
 
-Each case is an ordinary `text`, `bar` or `custom` display — a choice inside a
+Each case is an ordinary `text`, `bar`, `iconText` or `custom` display — a choice inside a
 choice is refused, because conditions belong in the flow. It works anywhere a
 display does: an entity's own, or one set in the flow.
 
-A **glyph** is a `custom` case. WLED's fonts are ASCII only, so a picture is
-per-pixel data in the segment's own `i` field — `[start, stop, colour]` fills a
-range, `[index, colour]` one pixel, and indices run row by row across the
-segment. A sun beside the condition, for `sunny` and `clear-night`:
+A **glyph** is an `iconText` case — see the next section. A sun for `sunny`,
+the outside temperature beside it, and plain text otherwise.
+
+### An icon beside text
+
+WLED's fonts are ASCII only, so a picture is per-pixel data. `'iconText'` is a
+picture with a reading beside it, painted in the editor:
 
 ```json
 {
-    "style": "byState",
-    "cases": [{
-        "test": "is",
-        "states": ["sunny", "clear-night"],
-        "display": { "style": "custom", "payload": { "seg": [
-            { "id": 1, "start": 0, "stop": 8, "startY": 0, "stopY": 8, "fx": 0, "on": true,
-              "i": [0, 64, "000000", 3, 5, "FFC800", 9, "FFC800", 14, "FFC800", 18, 22, "FFC800",
-                    24, "FFC800", 26, 30, "FFC800", 31, "FFC800", 32, "FFC800", 34, 38, "FFC800",
-                    39, "FFC800", 42, 46, "FFC800", 49, "FFC800", 54, "FFC800", 59, 61, "FFC800"] },
-            { "id": 2, "start": 8, "stop": 32, "startY": 0, "stopY": 8,
-              "fx": 122, "n": "{{value}}", "sx": 80, "ix": 128, "c2": 0 }
-        ] } }
-    }],
-    "otherwise": { "style": "text", "segmentId": 0, "color": [255, 255, 255], "speed": 70, "text": "{{value}}" }
+    "style": "iconText",
+    "pixels": ["000000", "000000", "FFC800", "...256 in all, row by row"],
+    "textStart": 10,
+    "color": [230, 255, 244],
+    "speed": 128,
+    "text": "{{value}}",
+    "font": 3,
+    "yOffset": 131
 }
 ```
 
-The icon and its text use **segments 1 and 2**, sized by their own `start`
-and `stop`. Segment 0 needs no bounds: a segment that names none is the whole
-panel (see "Every view starts from a clean segment", below).
+`wled.ts` sends it as the two segments every hand-written glyph body used:
+
+- **segment 0**: the whole panel, frozen, its `i` the 256 pixels. They are
+  encoded as wled-matrix-painter's "Copy as JSON" writes them (`ledEntries.ts`).
+- **segment 1**: Scrolling Text from column `textStart` to the edge, with the
+  font as `c2`, the Y offset as `ix`, no trail, and `bm: 8`, Lighten.
+
+Because of Lighten, the picture may run on under the text: wherever the text is
+unlit, the picture shows. `pixels` therefore covers the whole panel rather than
+only the icon's columns. `font` is 0-4, WLED 16's five fonts (`fonts.ts`), and
+the preview lays the text out in it.
+
+Switching a `custom` display to "icon and text" in the editor converts it. The
+body has to be shaped like a glyph: one segment with `i`, and one with a name.
+The picture is decoded from the first segment, and the text, colour, start,
+font and offset are read from the second.
 
 ### The built-in items
 
@@ -336,7 +348,9 @@ single bar is mirrored; a custom body leaves it dark.
   segment name, and the real `/json/state` body folded under "What gets sent".
   Placeholders are inserted at the caret from the chips under the template. For
   a display chosen by state, the sample value is the state, and the preview says
-  which case it picked. A custom display swaps the mock-up for a JSON editor and
+  which case it picked. An icon-and-text display adds a pixel painter: the whole
+  panel, the text's columns shaded, with paint, erase, fill, pick, undo and a
+  palette. A custom display swaps the mock-up for a JSON editor and
   lists what each of its segment names filled to; the shared validator's
   complaint appears as you type.
 - **Settings** — the WLED address, the brightness and the timezone: what
@@ -502,7 +516,15 @@ WLED:
   body sets other than `on` and `bri` (`transition`, `nl`, `mainseg`) are not
   reset — the device's own value for those is a setting nothing here can read.
   Only the segments being drawn are on, so overlapping segments do not fight.
-- **A glyph's pixels are unverified against hardware**, like the bar's
+- **An icon beside text is the hand-written glyph body, generated.** Segment 0
+  is the whole panel, frozen, with `fx: 122` carried over, and segment 1 is the
+  text with `bm: 8`. Nothing about that arrangement is new. What is new is that
+  `wled.ts` writes it, so the tests can only promise the same bytes as the body
+  it replaces, not how the device draws them. Lighten is a WLED 16 blend mode;
+  before 16 `bm` is ignored and overlapping segments are undefined. The
+  segments are fixed at 0 and 1, so another display's segment 1 is switched
+  off while it is drawn, as any shared segment is.
+- **A custom body's pixels are unverified against hardware**, like the bar's
   direction: that `i` creates nothing and only paints, that indices run row by
   row across a 2D segment, and that a body naming segments 1 and 2 creates them
   if the device has fewer. The editor cannot show it either — a custom body has
@@ -543,7 +565,9 @@ WLED:
   reproduced in a browser. Letters are drawn one to a fixed cell of the same
   width font 0 uses, so the character count, the visible window and whether a
   string scrolls are right; the letterforms are not. The bar is drawn across 32
-  columns, left to right, over the whole panel, which is what the device does. For a
+  columns, left to right, over the whole panel, which is what the device does. An
+  icon beside text is drawn pixel for pixel, with its text over it blended as
+  Lighten and placed per `fonts.ts`'s glyph widths. For a
   custom body there is **no mock-up at all**, deliberately: it can draw one
   scrolling string or one bar across the whole panel, and a custom body is
   neither. It lists the filled segment names and the finished JSON instead.
@@ -676,6 +700,12 @@ Home Assistant's compressed WebSocket format:
   slider while an absent one takes it, the other entities' segments still
   switched off around it, a segment it shares not being switched off under it,
   and an unavailable reading filling as empty rather than throwing
+- an icon beside text: the solar glyph's `i` byte for byte as its hand-written
+  body had it, the text from `textStart` with the font as `c2`, `ix`, no trail
+  and Lighten, its two segments owned and the others switched off, working as
+  a case; three painter-written glyphs decoding and re-encoding unchanged, and
+  WLED's continuation and range forms decoding; the validator refusing part of
+  a panel, a `#`-prefixed colour, no room for text or picture, and font 5
 - every segment going out clean: a bar, text and a custom body each setting
   every field a previous view could have left, a custom segment's own fields,
   bounds, `len` and partial `col` winning over the reset, and a segment it only

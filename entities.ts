@@ -1,4 +1,5 @@
 import { BuiltinFormat, BuiltinIds, defaultFormatFor } from './builtins.ts';
+import { TextFont } from './fonts.ts';
 
 /**
  * The registry: every entity the panel knows about, what kind of value it
@@ -56,6 +57,25 @@ export type PlainDisplay =
         color: RGBColor,
         /** The unfilled part of the bar. */
         trackColor: RGBColor,
+    }
+    | {
+        /**
+         * A picture with a reading beside it, the one custom body every glyph
+         * used to be written as: the picture on segment 0 across the whole
+         * panel, frozen, and the text on segment 1 from `textStart`, blended
+         * over it with Lighten — so the picture may run on under the text, as
+         * the solar one does by a column. `wled.ts` writes both.
+         */
+        style: 'iconText',
+        /** The whole 32x8 panel, row by row, each `'RRGGBB'`: segment 0 exactly. */
+        pixels: string[],
+        textStart: number,
+        color: RGBColor,
+        speed: number,
+        text: string,
+        font: TextFont,
+        /** `ix`, 0-255. 128 is the static middle; 0 and 255 scroll it vertically. */
+        yOffset: number,
     }
     | {
         style: 'custom',
@@ -116,8 +136,8 @@ export const matchesStateCase = (stateCase: StateCase, state: string): boolean =
  * drawn when none does. The cases are plain displays — a choice inside a
  * choice would be a second flow, and the flow is where conditions belong.
  *
- * A glyph for a state is a `custom` case: WLED's fonts are ASCII only, so a
- * picture is per-pixel data in the body's own `seg[].i`.
+ * A glyph for a state is an `iconText` case: WLED's fonts are ASCII only, so a
+ * picture is per-pixel data in a segment's `i`.
  */
 export type WledDisplay =
     | PlainDisplay
