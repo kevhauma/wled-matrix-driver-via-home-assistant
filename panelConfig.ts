@@ -597,6 +597,9 @@ const parseMember = (value: unknown, path: string): LoopMember => {
     if (record.when !== undefined) {
         member.when = parseMemberWhen(record.when, `${path}.when`);
     }
+    if (record.dwellSeconds !== undefined) {
+        member.dwellSeconds = asNumberInRange(record.dwellSeconds, `${path}.dwellSeconds`, 1, 3600);
+    }
     return member;
 };
 

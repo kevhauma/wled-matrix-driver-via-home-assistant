@@ -448,3 +448,24 @@ Deno.test('a loop member’s when survives validation, and an empty one is refus
     assertSame(JSON.stringify(kept), JSON.stringify(when), 'kept as written');
     assertSame(empty.includes('members[0].when.conditions must be at least one condition'), true, empty);
 });
+
+Deno.test('a loop member’s own dwell survives validation, and one out of range is refused', () => {
+    const parsed = parsePanelConfig(withFlowAction({
+        do: 'loop',
+        members: [{ id: 'a', entityId: 'sensor.a', dwellSeconds: 30 }, { id: 'b', entityId: 'sensor.a' }],
+        dwellSeconds: 5,
+    }));
+    const action = parsed.flow[0].action;
+    const own = action.do === 'loop' ? action.members[0].dwellSeconds : undefined;
+    const inherited = action.do === 'loop' ? action.members[1].dwellSeconds : 'not a loop';
+
+    const zero = actionRefusal({
+        do: 'loop',
+        members: [{ id: 'a', entityId: 'sensor.a', dwellSeconds: 0 }],
+        dwellSeconds: 5,
+    });
+
+    assertSame(own, 30, 'kept as written');
+    assertSame(inherited, undefined, 'absent stays absent');
+    assertSame(zero.includes('members[0].dwellSeconds'), true, zero);
+});

@@ -51,7 +51,7 @@ export type Condition = EntityCondition | TimeCondition;
 export const ActionKinds = {
     Blank: 'blank',
     Show: 'show',
-    /** Takes its members in turn, one every `dwellSeconds`. */
+    /** Takes its members in turn, each for its own `dwellSeconds` or the loop's. */
     Loop: 'loop',
 } as const;
 
@@ -74,6 +74,8 @@ export type LoopMember = {
      * sensor has dropped off.
      */
     when?: MemberWhen,
+    /** How long this member holds the panel; absent means the loop's own. */
+    dwellSeconds?: number,
 };
 
 /** A rule's conditions, scoped to one loop member. Never empty. */

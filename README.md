@@ -97,6 +97,10 @@ only while it is low:
 `when` takes the same conditions a rule does, time windows included. Leave it
 out for a member that always takes its turn; an empty one is refused.
 
+A member can hold the panel for a time of its own — `"dwellSeconds": 15` on
+the member, or the seconds field in its row on the Flow tab, left empty to
+inherit. Without one it gets the loop's `dwellSeconds`.
+
 Rotations have memory. Interrupted by music and then resumed, one comes back to
 the member it was on and gives it a full turn, rather than counting the
 interruption against it. That position is not persisted: a restart begins at the

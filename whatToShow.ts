@@ -186,10 +186,11 @@ const availableMembers = (
  */
 const advanceLoop = (
     previous: LoopState | undefined,
-    memberIds: readonly string[],
+    members: readonly LoopMember[],
     dwellSeconds: number,
     atMilliseconds: number,
 ): LoopState => {
+    const memberIds = members.map(member => member.id);
     if (previous === undefined) {
         return { memberId: memberIds[0], sinceMilliseconds: atMilliseconds, wasActive: true };
     }
@@ -203,13 +204,14 @@ const advanceLoop = (
         return { memberId: current, sinceMilliseconds: atMilliseconds, wasActive: true };
     }
 
+    const position = memberIds.indexOf(current);
+    const ownDwell = members[position].dwellSeconds ?? dwellSeconds;
     const elapsed = atMilliseconds - previous.sinceMilliseconds;
-    const isDue = elapsed >= dwellSeconds * 1000;
+    const isDue = elapsed >= ownDwell * 1000;
     if (!isDue) {
         return { memberId: current, sinceMilliseconds: previous.sinceMilliseconds, wasActive: true };
     }
 
-    const position = memberIds.indexOf(current);
     const next = memberIds[(position + 1) % memberIds.length];
     return { memberId: next, sinceMilliseconds: atMilliseconds, wasActive: true };
 };
@@ -264,8 +266,7 @@ export const decidePanel = (
         }
 
         const previous = loops.get(rule.id);
-        const memberIds = members.map(member => member.id);
-        const state = advanceLoop(previous, memberIds, rule.action.dwellSeconds, atMilliseconds);
+        const state = advanceLoop(previous, members, rule.action.dwellSeconds, atMilliseconds);
         carryForward(rule.id);
         nextLoops.set(rule.id, state);
         const member = members.find(candidate => candidate.id === state.memberId) ?? members[0];

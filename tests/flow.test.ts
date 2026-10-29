@@ -271,3 +271,22 @@ Deno.test('a show rule passes its own display on, and none when it has none', ()
     assertSame(overridden.show === 'entity' && overridden.display === titleView, true, 'the override');
     assertSame(plain.show === 'entity' && 'display' in plain, false, 'no display key at all');
 });
+
+Deno.test('a member with a dwell of its own holds the panel that long, and the rest keep the rule’s', () => {
+    const flow = [
+        rule('sensors', {
+            action: {
+                do: 'loop',
+                members: [{ id: 'temp', entityId: TEMP, dwellSeconds: 12 }, { id: 'battery', entityId: BATTERY }],
+                dwellSeconds: 5,
+            },
+        }),
+    ];
+    const quiet = { [TEMP]: WARM, [BATTERY]: HALF };
+    const moments = [0, 5_000, 11_999, 12_000, 16_999, 17_000].map(at => ({ at, readings: quiet }));
+
+    const shown = play(flow, moments).map(shownBy);
+
+    const expected = [TEMP, TEMP, TEMP, BATTERY, BATTERY, TEMP];
+    assertSame(shown.join(' '), expected.join(' '), 'twelve seconds, then five');
+});

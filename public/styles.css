@@ -838,6 +838,14 @@ input.rule-label:focus {
     flex: 1;
 }
 
+.member-dwell {
+    gap: 4px;
+}
+
+.member-dwell input {
+    width: 60px;
+}
+
 .position {
     flex: none;
     width: 18px;

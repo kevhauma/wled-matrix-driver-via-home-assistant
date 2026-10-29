@@ -56,9 +56,11 @@ const FLOW_HELP = [
     'A rule with no conditions always matches — except a rotation, which is skipped while '
         + 'none of its members has a reading. Keep a rule with no conditions at the bottom to '
         + 'catch that.',
-    '“take turns between” shows each member for the seconds given. Interrupted and then '
-        + 'resumed, it comes back to the member it was on and gives it a full turn. The same '
-        + 'entity can be a member twice — a media player’s title, then its artist.',
+    '“take turns between” shows each member for the seconds given. A member with seconds '
+        + 'of its own in its row keeps the panel that long instead; leave it empty to use the '
+        + 'rule’s. Interrupted and then resumed, it comes back to the member it was on and '
+        + 'gives it a full turn. The same entity can be a member twice — a media player’s '
+        + 'title, then its artist.',
     'Hover a rule or a member for its tools. “show when…” gives a member conditions of its '
         + 'own: it takes its turn only while they match. “own view…” draws an entity '
         + 'differently in that one place; its badge opens it again, and “reset” goes back to '
@@ -313,6 +315,34 @@ const memberWhenEditor = (member, context) => {
     ]);
 };
 
+/**
+ * Empty means the rule's own dwell, which is the placeholder, so an empty
+ * field still says how long the member gets.
+ */
+const memberDwellField = (member, action, context) => make('label', {
+    class: 'inline-field member-dwell',
+    title: 'Seconds this member stays up. Empty uses the rule’s.',
+}, [
+    make('input', {
+        type: 'number',
+        min: '1',
+        max: '3600',
+        value: member.dwellSeconds ?? '',
+        placeholder: String(action.dwellSeconds),
+        'aria-label': `Seconds for ${member.entityId}`,
+        onInput: event => {
+            const raw = event.target.value;
+            if (raw === '') {
+                delete member.dwellSeconds;
+            } else {
+                member.dwellSeconds = Number(raw);
+            }
+            context.edited();
+        },
+    }),
+    's',
+]);
+
 const loopEditor = (rule, context) => {
     const { config } = context;
     const action = rule.action;
@@ -352,6 +382,7 @@ const loopEditor = (rule, context) => {
             make('span', { class: 'mono member-id', textContent: member.entityId }),
             view.badge,
             make('span', { class: 'spacer' }),
+            memberDwellField(member, action, context),
             make('div', { class: 'tools' }, [
                 showWhen,
                 ...view.tools,
@@ -404,6 +435,12 @@ const dwellField = (action, context) => make('label', { class: 'inline-field' },
         value: action.dwellSeconds,
         onInput: event => {
             action.dwellSeconds = Number(event.target.value);
+            // Not re-rendered, so the members' "same as the rule" hints are
+            // kept in step by hand.
+            const rule = event.target.closest('.rule');
+            for (const input of rule.querySelectorAll('.member-dwell input')) {
+                input.placeholder = event.target.value;
+            }
             context.edited();
         },
     }),
