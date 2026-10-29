@@ -154,6 +154,19 @@ h2 {
     color: var(--muted);
 }
 
+.showing .value {
+    color: var(--accent);
+}
+
+.showing .kind {
+    flex: none;
+    font-size: 11px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+}
+
 .save {
     display: flex;
     align-items: center;

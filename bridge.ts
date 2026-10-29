@@ -28,6 +28,8 @@ export type BridgeSnapshot = {
     connection: ConnectionState,
     decision: Decision | undefined,
     readings: Record<string, Reading>,
+    /** The raw state strings, which is what `above`, `below` and `equals` compare. */
+    states: Record<string, string>,
     lastPayload: WledPayload | undefined,
     /** Which loop rule is on which member, keyed by rule id. */
     loops: Record<string, LoopState>,
@@ -76,6 +78,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
     let connection: ConnectionState = ConnectionStates.Stopped;
     let lastDecision: Decision | undefined;
     let lastReadings: Map<string, Reading> = new Map();
+    let lastStates: Map<string, string> = new Map();
     let lastPayload: WledPayload | undefined;
     let loops: ReadonlyMap<string, LoopState> = new Map();
     let matchedRuleId: string | undefined;
@@ -172,6 +175,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
         loops = outcome.loops;
         matchedRuleId = outcome.matchedRuleId;
         lastReadings = readings;
+        lastStates = states;
         lastDecision = decision;
 
         const description = describe(decision);
@@ -244,6 +248,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
             connection,
             decision: lastDecision,
             readings: Object.fromEntries(lastReadings),
+            states: Object.fromEntries(lastStates),
             lastPayload,
             loops: Object.fromEntries(loops),
             matchedRuleId,

@@ -170,20 +170,31 @@ const ruleLabel = ruleId => {
     return rule?.label || '';
 };
 
+/**
+ * The state as Home Assistant sent it, which is what the flow's tests compare,
+ * and the kind its display parses it as.
+ */
+const describeValue = (live, entityId) => {
+    const state = live.states?.[entityId] ?? '';
+    const kind = live.readings?.[entityId]?.kind ?? 'unknown';
+    return [
+        make('span', { class: 'mono value', textContent: state === '' ? '—' : state }),
+        make('span', { class: 'kind', textContent: kind }),
+    ];
+};
+
 const describeDecision = live => {
     if (!live || !live.decision) {
         return ['—'];
     }
-    const why = ruleLabel(live.matchedRuleId);
-    const because = why === '' ? null : make('span', { class: 'why', textContent: why });
     if (live.decision.show === 'nothing') {
-        return [make('span', { textContent: 'off' }), because ?? make('span', {
-            class: 'why',
-            textContent: live.decision.reason,
-        })];
+        const why = ruleLabel(live.matchedRuleId);
+        const reason = why === '' ? live.decision.reason : why;
+        return [make('span', { textContent: 'off' }), make('span', { class: 'why', textContent: reason })];
     }
+    const { entityId } = live.decision;
     const ownView = live.decision.display === undefined ? '' : ' (own view)';
-    return [make('span', { class: 'mono', textContent: `${live.decision.entityId}${ownView}` }), because];
+    return [make('span', { class: 'mono', textContent: `${entityId}${ownView}` }), ...describeValue(live, entityId)];
 };
 
 /**

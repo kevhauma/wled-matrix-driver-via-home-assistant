@@ -312,8 +312,11 @@ unauthenticated, and this runs on a network that by construction has a WLED
 device and a Home Assistant instance on it.
 
 The header carries a thumbnail of the panel, drawn from the body the service
-last sent, beside the entity it is showing and the rule that chose it. Only a
-single scrolling name or a single bar is mirrored; a custom body leaves it dark.
+last sent, beside the entity it is showing, that entity's raw state, and what
+it is read as — `percent`, `temperature`, `text` or `unavailable`. The flow's
+tests compare the raw state; the kind is how its display parses it. While the
+panel is off it names the rule that turned it off instead. Only a single scrolling name or a
+single bar is mirrored; a custom body leaves it dark.
 
 - **Entities** — a search box over what Home Assistant exposes, and the list of
   what the panel knows. The search is the *server's*: `/api/library` answers
