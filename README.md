@@ -340,7 +340,11 @@ single bar is mirrored; a custom body leaves it dark.
   lists what each of its segment names filled to; the shared validator's
   complaint appears as you type.
 - **Settings** — the WLED address, the brightness and the timezone: what
-  belongs to the device rather than to any one entity.
+  belongs to the device rather than to any one entity. **Export** downloads the
+  saved configuration as `panel.config.json`, written as the service writes it,
+  so a deployed one can be dropped into a dev checkout and restarted. It
+  carries the WLED address, so that copy posts to the same device unless you
+  clear it.
 
 Every explanation is behind the `?` on its card, and stays open across edits
 once opened. Ctrl+S saves.
