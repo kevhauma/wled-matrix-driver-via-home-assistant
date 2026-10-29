@@ -20,11 +20,20 @@ const ROTATE_SECONDS = 5;
 
 const FLOW = defaultFlow(ROTATE_SECONDS);
 
-/** Only `equals` reads the raw states, and no test here uses it. */
+/** What Home Assistant would have sent for each reading, as near as matters here. */
+const toState = (reading: Reading): string => {
+    if (reading.kind === 'percent') {
+        return String(reading.percent);
+    }
+    if (reading.kind === 'temperature') {
+        return String(reading.degrees);
+    }
+    return reading.kind === 'unavailable' ? 'unavailable' : 'on';
+};
+
 const toStates = (readings: Record<string, Reading>): Map<string, string> => {
     const entries = Object.keys(readings).map(entityId => {
-        const reading = readings[entityId];
-        const state = reading.kind === 'unavailable' ? 'unavailable' : 'on';
+        const state = toState(readings[entityId]);
         return [entityId, state] as const;
     });
     return new Map(entries);
@@ -204,4 +213,56 @@ Deno.test('a loop whose every member is left out by its when declines, so the ne
     const decisions = decideLowBattery({ [EntityIds.Battery]: BATTERY }, [0]);
 
     assertSame(shownIds(decisions), 'nothing', 'fell through to idle');
+});
+
+/**
+ * Whether an entity reads as a number is its own business — a power sensor
+ * added as text still has a numeric state, and that is what the test compares.
+ */
+const decideAbove = (state: string, reading: Reading, value: number | string): Decision => {
+    const flow: FlowRule[] = [
+        {
+            id: 'high',
+            match: 'all',
+            conditions: [{ entityId: 'sensor.power', test: 'above', value }],
+            action: { do: 'show', entityId: 'sensor.power' },
+        },
+    ];
+    const outcome = decidePanel({
+        flow,
+        readings: new Map([['sensor.power', reading]]),
+        states: new Map([['sensor.power', state]]),
+        atMilliseconds: 0,
+        timeZone: '',
+        loops: new Map(),
+    });
+    return outcome.decision;
+};
+
+Deno.test('above compares a numeric state on an entity read as text', () => {
+    const reading: Reading = { kind: 'text', candidates: ['1250'], isPlaying: false };
+    const decision = decideAbove('1250', reading, 1000);
+
+    assertSame(decision.show, 'entity', 'the rule matched');
+});
+
+Deno.test('above compares the state, not a percentage clamped to 100', () => {
+    const reading: Reading = { kind: 'percent', percent: 100 };
+    const decision = decideAbove('140', reading, 120);
+
+    assertSame(decision.show, 'entity', 'the rule matched');
+});
+
+Deno.test('above takes a threshold written as a string', () => {
+    const reading: Reading = { kind: 'temperature', degrees: 21.5, unit: 'C' };
+    const decision = decideAbove('21.5', reading, '21');
+
+    assertSame(decision.show, 'entity', 'the rule matched');
+});
+
+Deno.test('above never matches a state that is not a number', () => {
+    const reading: Reading = { kind: 'text', candidates: ['playing'], isPlaying: true };
+    const decision = decideAbove('playing', reading, 0);
+
+    assertSame(decision.show, 'nothing', 'the rule did not match');
 });

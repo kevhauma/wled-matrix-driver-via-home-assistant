@@ -37,7 +37,7 @@ export type PanelInput = {
     readings: ReadonlyMap<string, Reading>,
     /**
      * Raw Home Assistant state strings, which `Reading` throws away for
-     * numeric kinds. Only `equals` needs them.
+     * numeric kinds. `equals`, `above` and `below` compare these.
      */
     states: ReadonlyMap<string, string>,
     atMilliseconds: number,
@@ -55,14 +55,18 @@ export type PanelOutput = {
     matchedRuleId: string | undefined,
 };
 
-const toNumber = (reading: Reading | undefined): number | undefined => {
-    if (reading?.kind === 'percent') {
-        return reading.percent;
+/**
+ * The raw state, not the reading: an entity read as text can still have a
+ * numeric state — a power sensor, say — and a percentage reading is clamped to
+ * 0-100. This is also how a `byState` display's `above` reads it.
+ */
+const toNumber = (state: string | undefined): number | undefined => {
+    // `Number('')` is 0, which would make an entity with no state "below 1".
+    if (state === undefined || state.trim() === '') {
+        return undefined;
     }
-    if (reading?.kind === 'temperature') {
-        return reading.degrees;
-    }
-    return undefined;
+    const value = Number(state);
+    return Number.isFinite(value) ? value : undefined;
 };
 
 /**
@@ -118,12 +122,12 @@ const matchesCondition = (
         case 'isUnavailable':
             return !hasReading(reading);
         case 'above': {
-            const value = toNumber(reading);
+            const value = toNumber(states.get(condition.entityId));
             const threshold = Number(condition.value);
             return value !== undefined && Number.isFinite(threshold) && value > threshold;
         }
         case 'below': {
-            const value = toNumber(reading);
+            const value = toNumber(states.get(condition.entityId));
             const threshold = Number(condition.value);
             return value !== undefined && Number.isFinite(threshold) && value < threshold;
         }

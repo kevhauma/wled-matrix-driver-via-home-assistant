@@ -75,6 +75,11 @@ and the end is not, and a window whose end is earlier than its start runs past
 midnight — so that one is the night. A window has no `entityId`, and one that
 names one is refused.
 
+`above` and `below` read the entity's raw state as a number, whatever it is
+read as: a power sensor added as text compares fine, and a battery read as a
+percentage is not clamped to 100 first. A state that is not a number —
+`unavailable`, `playing` — matches neither.
+
 A sensor with no reading is left out of a rotation rather than taking its turn
 and showing nothing — and a rotation with *nothing* left declines to match at
 all, so the rules below it are tried. That is why a flow wants a conditionless

@@ -34,6 +34,17 @@ const rule = (id: string, partial: Partial<FlowRule>): FlowRule => ({
 
 type Moment = { at: number, readings: Record<string, Reading> };
 
+/** What Home Assistant would have sent for each reading, as near as matters here. */
+const toState = (reading: Reading): string => {
+    if (reading.kind === 'percent') {
+        return String(reading.percent);
+    }
+    if (reading.kind === 'temperature') {
+        return String(reading.degrees);
+    }
+    return reading.kind === 'unavailable' ? 'unavailable' : 'on';
+};
+
 /** Plays the moments in order, carrying the loop positions forward. */
 const play = (flow: readonly FlowRule[], moments: readonly Moment[]): Decision[] => {
     let loops: ReadonlyMap<string, LoopState> = new Map();
@@ -42,7 +53,7 @@ const play = (flow: readonly FlowRule[], moments: readonly Moment[]): Decision[]
         const readings = new Map(Object.entries(moment.readings));
         const states = new Map<string, string>();
         for (const [entityId, reading] of readings) {
-            const state = reading.kind === 'unavailable' ? 'unavailable' : 'on';
+            const state = toState(reading);
             states.set(entityId, state);
         }
         const outcome = decidePanel({ flow, readings, states, atMilliseconds: moment.at, timeZone: '', loops });
