@@ -344,7 +344,11 @@ single bar is mirrored; a custom body leaves it dark.
   saved configuration as `panel.config.json`, written as the service writes it,
   so a deployed one can be dropped into a dev checkout and restarted. It
   carries the WLED address, so that copy posts to the same device unless you
-  clear it.
+  clear it. **Import** is the way back without a restart: the file is upgraded
+  if it is an older version and run through the validator
+  (`POST /api/config/import`, which saves nothing), then replaces the draft on
+  every tab. Save applies it, as with any other edit — so check the WLED
+  address it brought before you do.
 
 Every explanation is behind the `?` on its card, and stays open across edits
 once opened. Ctrl+S saves.

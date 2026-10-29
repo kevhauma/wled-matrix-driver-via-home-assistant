@@ -137,6 +137,15 @@ const context = () => ({
     showTab: name => {
         setTab(name);
     },
+    /** Swaps the whole draft, unsaved, so Save is still what applies it. */
+    replaceConfig: config => {
+        state.config = config;
+        const first = config.entities[0];
+        state.selectedEntityId = first === undefined ? null : first.entityId;
+        state.selectedFlowTarget = null;
+        changed();
+    },
+    isDirty,
 });
 
 const RENDERERS = {

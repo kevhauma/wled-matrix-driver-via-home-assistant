@@ -1,4 +1,4 @@
-import { requestJson } from '/api.js';
+import { postJson, requestJson } from '/api.js';
 import { card, field, make, option, sliderField } from '/dom.js';
 
 /**
@@ -62,6 +62,32 @@ const exportConfig = async context => {
     }
 };
 
+/**
+ * The file is upgraded and validated by the server but not saved: it replaces
+ * the draft, and Save applies it as it would any other edit.
+ */
+const importConfig = async (context, file) => {
+    const discards = context.isDirty()
+        && !confirm('Importing replaces your unsaved changes. Continue?');
+    if (discards) {
+        return;
+    }
+    try {
+        const text = await file.text();
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch {
+            throw new Error(`${file.name} is not valid JSON.`);
+        }
+        const imported = await postJson('/api/config/import', parsed);
+        context.replaceConfig(imported);
+        context.setStatus(`Imported ${file.name}. Save to apply it.`, 'success');
+    } catch (error) {
+        context.setStatus(error.message, 'error');
+    }
+};
+
 export const renderSettings = (root, context) => {
     const { config } = context;
     root.className = 'narrow';
@@ -84,6 +110,20 @@ export const renderSettings = (root, context) => {
         onChange: event => {
             config.output.wledIp = event.target.value.trim();
             context.changed();
+        },
+    });
+
+    const fileInput = make('input', {
+        type: 'file',
+        accept: 'application/json,.json',
+        hidden: true,
+        onChange: event => {
+            const [file] = event.target.files;
+            // Cleared so picking the same file again still fires a change.
+            event.target.value = '';
+            if (file !== undefined) {
+                void importConfig(context, file);
+            }
         },
     });
 
@@ -115,6 +155,13 @@ export const renderSettings = (root, context) => {
                 title: 'Download the saved configuration as panel.config.json',
                 onClick: () => void exportConfig(context),
             }),
+            make('button', {
+                type: 'button',
+                textContent: 'Import',
+                title: 'Load a panel.config.json into the editor; Save applies it',
+                onClick: () => fileInput.click(),
+            }),
+            fileInput,
         ]),
     ], [
         'Downloads the configuration as saved — unsaved changes are not in it — as '
@@ -122,5 +169,8 @@ export const renderSettings = (root, context) => {
         'To run it elsewhere, put the file next to main.ts, replacing the one there, '
             + 'and restart the service. It carries the WLED address too, so a copy left '
             + 'running posts to the same device as this one.',
+        'Import loads a file into the editor in place of everything on every tab. An '
+            + 'older version is upgraded, and one the validator refuses is not loaded. '
+            + 'Nothing reaches the panel until you Save — check the WLED address first.',
     ]));
 };

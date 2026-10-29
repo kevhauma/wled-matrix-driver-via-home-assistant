@@ -2,7 +2,8 @@
  * Brings a `panel.config.json` written by an older version up to the current
  * shape, before `parsePanelConfig` sees it.
  *
- * Only the file goes through here. The editor always sends what it was given
+ * Only a file goes through here: the one on disk, or one imported on the
+ * Settings tab. The editor always sends what it was given
  * by `GET /api/config`, which is already current, so `PUT /api/config` is
  * validated as it arrives. Nothing is written back: the upgraded form reaches
  * the disk with the next save, so a file is never rewritten just by starting.

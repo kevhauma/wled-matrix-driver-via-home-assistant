@@ -2,6 +2,7 @@ import { Bridge } from './bridge.ts';
 import { describeBuiltins, toWallClock } from './builtins.ts';
 import { Config } from './config.ts';
 import { savePanelConfig } from './configStore.ts';
+import { upgradePanelConfig } from './configUpgrade.ts';
 import { fetchEntityStates, RestEntityState } from './homeAssistant/states.ts';
 import {
     builtinItems,
@@ -254,6 +255,24 @@ export const startServer = (
         if (url.pathname === '/api/config' && request.method === 'PUT') {
             const response = await saveConfig(request);
             return response;
+        }
+
+        /**
+         * An imported file, upgraded and checked but not saved: it becomes the
+         * editor's draft, and Save is what applies it. Upgraded here because
+         * `PUT /api/config` takes only the current version, and a file
+         * exported before an upgrade is still one worth importing.
+         */
+        if (url.pathname === '/api/config/import' && request.method === 'POST') {
+            const body = await readBody(request);
+            try {
+                const { config: upgraded } = upgradePanelConfig(body);
+                const imported = parsePanelConfig(upgraded);
+                return jsonResponse(imported);
+            } catch (error) {
+                const detail = error instanceof Error ? error.message : String(error);
+                throw new RequestError(400, detail);
+            }
         }
 
         if (url.pathname === '/api/state' && request.method === 'GET') {
