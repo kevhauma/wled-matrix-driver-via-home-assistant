@@ -12,9 +12,23 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
     }
 };
 
+/** The global every fixture below carries, so a text view can leave it out. */
+const TEXT_SETTINGS = {
+    color: [255, 255, 255],
+    gradientColor: [255, 255, 255],
+    speed: 70,
+    yOffset: 128,
+    trail: 0,
+    font: 0,
+    rotation: 'normal',
+    gradient: false,
+    reverse: false,
+};
+
 const withCustomPayload = (payload: unknown): unknown => ({
-    version: 5,
+    version: 6,
     output: { wledIp: '', brightness: 80, timeZone: '' },
+    textSettings: TEXT_SETTINGS,
     entities: [{ entityId: 'sensor.a', kind: 'percent', display: { style: 'custom', payload } }],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
 });
@@ -108,11 +122,12 @@ Deno.test('a custom display does not need a segmentId or a colour', () => {
  * format on something that is not one.
  */
 
-const TEXT_DISPLAY = { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: '{{value}}' };
+const TEXT_DISPLAY = { style: 'text', segmentId: 0, text: '{{value}}', settings: { speed: 60 } };
 
 const withEntity = (entity: unknown): unknown => ({
-    version: 5,
+    version: 6,
     output: { wledIp: '', brightness: 80, timeZone: '' },
+    textSettings: TEXT_SETTINGS,
     entities: [entity],
     flow: [{ id: 'always', match: 'all', conditions: [], action: { do: 'blank' } }],
 });
@@ -205,8 +220,9 @@ Deno.test('a custom body is allowed on a built-in, which is the way to compose o
 });
 
 const withCondition = (condition: unknown): unknown => ({
-    version: 5,
+    version: 6,
     output: { wledIp: '', brightness: 80, timeZone: '' },
+    textSettings: TEXT_SETTINGS,
     entities: [],
     flow: [{ id: 'night', match: 'all', conditions: [condition], action: { do: 'blank' } }],
 });
@@ -272,8 +288,9 @@ Deno.test('a text template refuses an unknown placeholder and an empty string', 
 
 Deno.test('a reference to another entity must name one of the panel’s, with a real name', () => {
     const config = (text: string): unknown => ({
-        version: 5,
+        version: 6,
         output: { wledIp: '', brightness: 80, timeZone: '' },
+        textSettings: TEXT_SETTINGS,
         entities: [
             { entityId: 'sensor.inside', kind: 'temperature', display: { ...TEXT_DISPLAY, text } },
             { entityId: 'sensor.outside', kind: 'temperature', display: TEXT_DISPLAY },
@@ -300,8 +317,9 @@ Deno.test('a reference to another entity must name one of the panel’s, with a 
 });
 
 const withFlowAction = (action: unknown): unknown => ({
-    version: 5,
+    version: 6,
     output: { wledIp: '', brightness: 80, timeZone: '' },
+    textSettings: TEXT_SETTINGS,
     entities: [
         { entityId: 'builtin.time', kind: 'text', format: 'hour24', display: TEXT_DISPLAY },
         { entityId: 'sensor.a', kind: 'percent', display: TEXT_DISPLAY },
@@ -474,11 +492,8 @@ const ICON_TEXT_DISPLAY = {
     style: 'iconText',
     pixels: new Array(256).fill('000000'),
     textStart: 8,
-    color: [255, 255, 255],
-    speed: 128,
     text: '{{value}}',
-    font: 1,
-    yOffset: 128,
+    settings: { speed: 128, font: 1 },
 };
 
 const iconTextRefusal = (changes: Record<string, unknown>): string =>
@@ -503,13 +518,18 @@ Deno.test('an icon beside text refuses a part panel, a bad colour, no room for t
     const badColour = iconTextRefusal({ pixels: ['#FFC800', ...ICON_TEXT_DISPLAY.pixels.slice(1)] });
     const noRoom = iconTextRefusal({ textStart: 32 });
     const noPicture = iconTextRefusal({ textStart: 0 });
-    const font = iconTextRefusal({ font: 5 });
+    const font = iconTextRefusal({ settings: { font: 5 } });
     const emptyText = iconTextRefusal({ text: '' });
+    // Where they used to live, which is the shape a hand-edit reaches for.
+    const flat = iconTextRefusal({ speed: 128 });
+    const stray = iconTextRefusal({ settings: { fnot: 1 } });
 
     assertSame(short.includes('display.pixels must be 256 pixels'), true, short);
     assertSame(badColour.includes('display.pixels[0]'), true, badColour);
     assertSame(noRoom.includes('display.textStart'), true, noRoom);
     assertSame(noPicture.includes('display.textStart'), true, noPicture);
-    assertSame(font.includes('display.font'), true, font);
+    assertSame(font.includes('display.settings.font'), true, font);
     assertSame(emptyText.includes('display.text'), true, emptyText);
+    assertSame(flat.includes('display.speed has moved into'), true, flat);
+    assertSame(stray.includes('is not a text setting'), true, stray);
 });

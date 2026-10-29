@@ -238,7 +238,7 @@ Deno.test('a time window is read in the panel’s timezone, not the host’s', (
     assertSame(decideIn('America/New_York'), 'entity', 'evening in New York');
 });
 
-const titleView = { style: 'text' as const, segmentId: 0, color: [255, 255, 255] as [number, number, number], speed: 80, text: '{{title}}' };
+const titleView = { style: 'text' as const, segmentId: 0, text: '{{title}}', settings: { speed: 80 } };
 const artistView = { ...titleView, text: '{{artist}}' };
 
 Deno.test('one entity can be a loop member twice, each with its own display', () => {

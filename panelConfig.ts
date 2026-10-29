@@ -1,22 +1,26 @@
 import { BuiltinId, formatsFor, isBuiltinId, isTimeZone } from './builtins.ts';
 import { Config } from './config.ts';
 import {
+    DEFAULT_TEXT_SETTINGS,
     EntityIds,
     PANEL_ENTITIES,
     PanelEntity,
     PlainDisplay,
     RGBColor,
     StateCase,
+    TextOverrides,
+    TextSettings,
     WledDisplay,
 } from './entities.ts';
 import { Action, Condition, FlowRule, LoopMember, MemberWhen } from './flow.ts';
-import { TEXT_FONTS, TextFont } from './fonts.ts';
+import { TEXT_FONTS, TEXT_ROTATIONS, TextFont, TextRotation } from './fonts.ts';
 import { findPlaceholders, isPlaceholder, PLACEHOLDER_NAMES } from './template.ts';
 import { PANEL_COLUMNS, PANEL_ROWS } from './wled.ts';
 
 /**
  * The document the editor saves and the service reads: which entities exist,
- * how each is drawn, and the flow that picks between them.
+ * how each is drawn, the flow that picks between them, and what every text
+ * view looks like unless it overrides a setting for itself.
  *
  * `WLED_IP` and `WLED_BRIGHTNESS` live here rather than in the environment
  * because they are things you adjust while looking at the panel. The env vars
@@ -36,14 +40,16 @@ export type PanelOutputConfig = {
 };
 
 export type PanelConfig = {
-    version: 5,
+    version: 6,
     output: PanelOutputConfig,
+    /** What every text view looks like unless it overrides a setting. */
+    textSettings: TextSettings,
     entities: PanelEntity[],
     flow: FlowRule[],
 };
 
 /** `configUpgrade.ts` brings an older file up to this before it is parsed. */
-export const CONFIG_VERSION = 5;
+export const CONFIG_VERSION = 6;
 
 /**
  * Reproduces exactly what `whatToShow` used to do in code: the television
@@ -98,6 +104,7 @@ export const defaultPanelConfig = (config: Config): PanelConfig => {
     return {
         version: CONFIG_VERSION,
         output: { wledIp: config.wled.ip, brightness: config.wled.brightness, timeZone: '' },
+        textSettings: { ...DEFAULT_TEXT_SETTINGS },
         entities: [...PANEL_ENTITIES],
         flow,
     };
@@ -208,6 +215,125 @@ const asColor = (value: unknown, path: string): RGBColor => {
         return Math.round(channel);
     });
     return [channels[0], channels[1], channels[2]];
+};
+
+const asBoolean = (value: unknown, path: string): boolean => {
+    if (typeof value !== 'boolean') {
+        throw fail(path, 'true or false', value);
+    }
+    return value;
+};
+
+const asRotation = (value: unknown, path: string): TextRotation => {
+    const rotation = asOneOf(value, path, TEXT_ROTATIONS);
+    return rotation;
+};
+
+const asSlider = (value: unknown, path: string): number => {
+    const slider = asNumberInRange(value, path, 0, 255);
+    return slider;
+};
+
+/**
+ * One reader per text setting, so the global and a view's overrides cannot
+ * disagree about what any of them accepts: the global runs all of these, a
+ * view runs the ones it has.
+ */
+const SETTING_READERS = {
+    color: asColor,
+    gradientColor: asColor,
+    speed: asSlider,
+    yOffset: asSlider,
+    trail: asSlider,
+    font: asFont,
+    rotation: asRotation,
+    gradient: asBoolean,
+    reverse: asBoolean,
+} as const;
+
+const SETTING_NAMES = Object.keys(SETTING_READERS) as (keyof TextSettings)[];
+
+/** The global: every setting present, because nothing backs it up. */
+const parseTextSettings = (record: Record<string, unknown>, path: string): TextSettings => ({
+    color: SETTING_READERS.color(record.color, `${path}.color`),
+    gradientColor: SETTING_READERS.gradientColor(record.gradientColor, `${path}.gradientColor`),
+    speed: SETTING_READERS.speed(record.speed, `${path}.speed`),
+    yOffset: SETTING_READERS.yOffset(record.yOffset, `${path}.yOffset`),
+    trail: SETTING_READERS.trail(record.trail, `${path}.trail`),
+    font: SETTING_READERS.font(record.font, `${path}.font`),
+    rotation: SETTING_READERS.rotation(record.rotation, `${path}.rotation`),
+    gradient: SETTING_READERS.gradient(record.gradient, `${path}.gradient`),
+    reverse: SETTING_READERS.reverse(record.reverse, `${path}.reverse`),
+});
+
+/**
+ * A text view carried its settings flat before they were shared. One left at
+ * the top level is refused rather than ignored: `configUpgrade.ts` moves them
+ * for a file that names its version, so meeting one here means a hand-edit or
+ * a half-pasted display, and silently dropping it would read as the global
+ * refusing to be overridden.
+ */
+const refuseFlatSettings = (record: Record<string, unknown>, path: string): void => {
+    const flat = SETTING_NAMES.find(name => record[name] !== undefined);
+    if (flat !== undefined) {
+        throw new Error(
+            `${path}.${flat} has moved into ${path}.settings, where it is one of the `
+                + 'settings this view overrides. Leave it out to follow config.textSettings.',
+        );
+    }
+};
+
+/**
+ * One text view's own settings: any subset, and absent means it follows the
+ * global. A key that is not a setting is refused rather than ignored — a
+ * misspelt override would otherwise be a save that quietly did nothing, which
+ * looks exactly like the global failing to apply.
+ */
+const parseTextOverrides = (value: unknown, path: string): TextOverrides => {
+    if (value === undefined) {
+        return {};
+    }
+    const record = asRecord(value, path);
+
+    const stray = Object.keys(record).find(key => !(key in SETTING_READERS));
+    if (stray !== undefined) {
+        const list = SETTING_NAMES.join(', ');
+        throw new Error(`${path}.${stray} is not a text setting. Known: ${list}.`);
+    }
+
+    /**
+     * Absent and explicitly null both mean "follow the global": the editor
+     * drops the key, but a hand-edited file is as likely to null it out.
+     */
+    const own = <T>(
+        name: keyof TextSettings,
+        read: (item: unknown, at: string) => T,
+    ): T | undefined => {
+        const raw = record[name];
+        const unset = raw === undefined || raw === null;
+        return unset ? undefined : read(raw, `${path}.${name}`);
+    };
+
+    const overrides: TextOverrides = {
+        color: own('color', SETTING_READERS.color),
+        gradientColor: own('gradientColor', SETTING_READERS.gradientColor),
+        speed: own('speed', SETTING_READERS.speed),
+        yOffset: own('yOffset', SETTING_READERS.yOffset),
+        trail: own('trail', SETTING_READERS.trail),
+        font: own('font', SETTING_READERS.font),
+        rotation: own('rotation', SETTING_READERS.rotation),
+        gradient: own('gradient', SETTING_READERS.gradient),
+        reverse: own('reverse', SETTING_READERS.reverse),
+    };
+
+    // So that a key being present always means the view overrides it, which is
+    // what the editor and `resolveTextSettings` are both reading.
+    for (const name of SETTING_NAMES) {
+        if (overrides[name] === undefined) {
+            delete overrides[name];
+        }
+    }
+    return overrides;
 };
 
 /**
@@ -469,28 +595,29 @@ const parsePlainDisplay = (value: unknown, path: string): PlainDisplay => {
         const pixels = parsePixels(record.pixels, `${path}.pixels`);
         // At least a column for the text, and at least one for the picture.
         const textStart = asWholeNumberInRange(record.textStart, `${path}.textStart`, 1, PANEL_COLUMNS - 1);
-        const color = asColor(record.color, `${path}.color`);
-        const speed = asNumberInRange(record.speed, `${path}.speed`, 0, 255);
         const text = asNonEmptyString(record.text, `${path}.text`);
         checkPlaceholders(text, `${path}.text`);
-        const font = asFont(record.font, `${path}.font`);
-        const yOffset = asNumberInRange(record.yOffset, `${path}.yOffset`, 0, 255);
-        return { style, pixels, textStart, color, speed, text, font, yOffset };
+        refuseFlatSettings(record, path);
+        const settings = parseTextOverrides(record.settings, `${path}.settings`);
+        return { style, pixels, textStart, text, settings };
     }
 
     const segmentId = asNumberInRange(record.segmentId, `${path}.segmentId`, 0, 31);
-    const color = asColor(record.color, `${path}.color`);
 
+    // A bar's colours are its own: they are not text, so the text settings
+    // have nothing to say about them.
     if (style === 'bar') {
+        const color = asColor(record.color, `${path}.color`);
         const trackColor = asColor(record.trackColor, `${path}.trackColor`);
         return { style, segmentId, color, trackColor };
     }
 
-    const speed = asNumberInRange(record.speed, `${path}.speed`, 0, 255);
     // Not empty: a blank segment name makes Scrolling Text draw the date.
     const text = asNonEmptyString(record.text, `${path}.text`);
     checkPlaceholders(text, `${path}.text`);
-    return { style, segmentId, color, speed, text };
+    refuseFlatSettings(record, path);
+    const settings = parseTextOverrides(record.settings, `${path}.settings`);
+    return { style, segmentId, text, settings };
 };
 
 const READING_KINDS = ['percent', 'temperature', 'text'] as const;
@@ -743,6 +870,9 @@ export const parsePanelConfig = (value: unknown): PanelConfig => {
     const brightness = asNumberInRange(output.brightness, 'config.output.brightness', 0, 255);
     const timeZone = asTimeZone(output.timeZone, 'config.output.timeZone');
 
+    const rawTextSettings = asRecord(record.textSettings, 'config.textSettings');
+    const textSettings = parseTextSettings(rawTextSettings, 'config.textSettings');
+
     const rawEntities = asArray(record.entities, 'config.entities');
     const entities = rawEntities.map((entity, index) => {
         const parsed = parseEntity(entity, `config.entities[${index}]`);
@@ -769,5 +899,11 @@ export const parsePanelConfig = (value: unknown): PanelConfig => {
 
     checkFlowDisplays(flow, entityIds);
 
-    return { version: CONFIG_VERSION, output: { wledIp, brightness, timeZone }, entities, flow };
+    return {
+        version: CONFIG_VERSION,
+        output: { wledIp, brightness, timeZone },
+        textSettings,
+        entities,
+        flow,
+    };
 };

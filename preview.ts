@@ -1,5 +1,11 @@
 import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
-import { PanelEntity, PlainDisplay, WledDisplay } from './entities.ts';
+import {
+    PanelEntity,
+    PlainDisplay,
+    resolveTextSettings,
+    TextSettings,
+    WledDisplay,
+} from './entities.ts';
 import { layoutText, TextLayout } from './fonts.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
 import { readBuiltin, readEntity, Reading } from './readings.ts';
@@ -31,6 +37,7 @@ export type PreviewWarning =
     | 'strippedNonAscii'
     | 'shortened'
     | 'scrolls'
+    | 'scrollsVertically'
     | 'segmentNameTooLong';
 
 /** One segment of a custom display, once its placeholders are filled. */
@@ -69,11 +76,19 @@ export type Preview = {
      */
     caseIndex: number | undefined,
     /**
-     * An `iconText` display's text, laid out in the columns from its
-     * `textStart` in the font it names. Absent for every other style: the plain text style
-     * pins font 0, whose fixed width `visible` already describes.
+     * The text laid out in the columns it has — the whole panel, or for an
+     * `iconText` display the ones from its `textStart` — in the font its
+     * settings resolve to. Absent only for the styles that draw no text.
      */
     textLayout: TextLayout | undefined,
+    /**
+     * What that text actually looks like, the global and the view's own
+     * overrides already resolved. Absent for the styles that draw no text.
+     * The editor draws its mock-up from this rather than resolving in the
+     * browser, so it cannot disagree with the payload beside it about which
+     * value won.
+     */
+    textSettings: TextSettings | undefined,
     warnings: PreviewWarning[],
 };
 
@@ -151,6 +166,8 @@ export type PreviewInput = {
     /** Only a media player has one, and only then is it asked for. */
     sampleArtist: string,
     brightness: number,
+    /** The global every text view's own settings are layered over. */
+    textSettings: TextSettings,
     /** What a built-in's clock reads in. Empty means the host's own zone. */
     timeZone: string,
     /**
@@ -173,6 +190,7 @@ export const toPreview = (
         unit,
         sampleArtist,
         brightness,
+        textSettings: globalText,
         timeZone,
         liveReadings,
     }: PreviewInput,
@@ -210,16 +228,37 @@ export const toPreview = (
     const decision = override === undefined
         ? { show: 'entity' as const, entityId }
         : { show: 'entity' as const, entityId, display: override };
-    const payload = toWledPayload({ decision, entities, flowDisplays, readings, states, brightness });
+    const payload = toWledPayload({
+        decision,
+        entities,
+        flowDisplays,
+        readings,
+        states,
+        brightness,
+        textSettings: globalText,
+    });
 
     const textColumns = display.style === 'iconText' ? PANEL_COLUMNS - display.textStart : PANEL_COLUMNS;
-    const textLayout = display.style !== 'iconText' ? undefined : layoutText({
+    /**
+     * Both styles that draw text are laid out the same way now that the plain
+     * one has a font of its own: it used to pin font 0, whose fixed width
+     * `visibleLetters` could describe on its own.
+     */
+    const drawsText = display.style === 'text' || display.style === 'iconText';
+    const textSettings = drawsText ? resolveTextSettings(globalText, display.settings) : undefined;
+    const textLayout = textSettings === undefined ? undefined : layoutText({
         text,
-        font: display.font,
-        yOffset: display.yOffset,
+        font: textSettings.font,
+        yOffset: textSettings.yOffset,
+        rotation: textSettings.rotation,
         columns: textColumns,
         rows: PANEL_ROWS,
     });
+    /**
+     * A custom body names no font, so its segment names are still counted at
+     * font 0's fixed width — the one place `visibleLetters` is still the best
+     * that can be said.
+     */
     const visible = textLayout === undefined
         ? visibleLetters(textColumns)
         : textLayout.glyphs.filter(glyph => glyph.x + glyph.width <= textColumns).length;
@@ -273,9 +312,12 @@ export const toPreview = (
             warnings.push('shortened');
         }
         // WLED centres text that fits and scrolls only what does not.
-        const scrolls = textLayout === undefined ? text.length > visible : textLayout.motion === 'across';
-        if (scrolls) {
+        const motion = textLayout?.motion;
+        if (motion === 'across') {
             warnings.push('scrolls');
+        }
+        if (motion === 'up' || motion === 'down') {
+            warnings.push('scrollsVertically');
         }
     }
 
@@ -292,6 +334,7 @@ export const toPreview = (
         display,
         caseIndex,
         textLayout,
+        textSettings,
         warnings,
     };
 };

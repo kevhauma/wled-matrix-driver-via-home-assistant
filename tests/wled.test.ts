@@ -1,4 +1,12 @@
-import { EntityIds, PANEL_ENTITIES, PanelEntity, PlainDisplay, RGBColor } from '../entities.ts';
+import {
+    DEFAULT_TEXT_SETTINGS,
+    EntityIds,
+    PANEL_ENTITIES,
+    PanelEntity,
+    PlainDisplay,
+    RGBColor,
+    TextSettings,
+} from '../entities.ts';
 import { decodeLedEntries } from '../public/ledEntries.js';
 import { Reading } from '../readings.ts';
 import {
@@ -20,6 +28,9 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 
 const BRIGHTNESS = 96;
 
+/** The global every text view below resolves against. */
+const GLOBAL_TEXT: TextSettings = DEFAULT_TEXT_SETTINGS;
+
 const NO_OTHERS = toEntityValues(new Map());
 
 const buildPayload = (decision: Decision, readings: Record<string, Reading>) =>
@@ -30,6 +41,7 @@ const buildPayload = (decision: Decision, readings: Record<string, Reading>) =>
         states: new Map(),
         readings: new Map(Object.entries(readings)),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
 type Segment = Record<string, unknown>;
@@ -103,6 +115,7 @@ Deno.test('segments other than the one being shown are switched off', () => {
         states: new Map(),
         readings: new Map([[EntityIds.Battery, { kind: 'percent', percent: 10 } as Reading]]),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
     const segments = payload.seg as Segment[];
@@ -176,6 +189,7 @@ const buildCustomPayload = (reading: Reading, entities?: PanelEntity[]) =>
         states: new Map(),
         readings: new Map([[CUSTOM_ENTITY.entityId, reading]]),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
 Deno.test('a custom display sends its own body, with the reading filled in', () => {
@@ -215,6 +229,7 @@ Deno.test('a custom body that sets bri keeps it', () => {
         states: new Map(),
         readings: new Map([[entity.entityId, { kind: 'percent', percent: 5 } as Reading]]),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
     assertSame(payload.bri, 12, 'its own, not the slider');
@@ -314,6 +329,7 @@ Deno.test('a custom segment keeps what it names, and a col it only partly fills 
         states: new Map(),
         readings: new Map([[entity.entityId, { kind: 'percent', percent: 5 } as Reading]]),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
     const segments = payload.seg as Segment[];
 
@@ -358,7 +374,7 @@ Deno.test('an unchanged payload is not sent twice', () => {
 });
 
 const textDisplay = (text: string): PlainDisplay =>
-    ({ style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text });
+    ({ style: 'text', segmentId: 0, text, settings: { speed: 60 } });
 
 Deno.test('a text template puts anything around the value, which is a suffix', () => {
     const power: Reading = { kind: 'text', candidates: ['1234'], isPlaying: false };
@@ -411,6 +427,7 @@ Deno.test('one display can draw two entities, each read as the panel draws it', 
         states: new Map(),
         readings,
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
     assertSame(firstSegment(payload).n, 'in 21C out 8C', 'both, rounded, with their units');
@@ -434,6 +451,7 @@ Deno.test('a display set in the flow replaces the entity’s own, and its segmen
         states: new Map(),
         readings,
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
     const own = toWledPayload({
         decision: { show: 'entity', entityId: 'sensor.temperature' },
@@ -442,6 +460,7 @@ Deno.test('a display set in the flow replaces the entity’s own, and its segmen
         states: new Map(),
         readings,
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
     const overriddenSegments = overridden.seg as Segment[];
@@ -480,6 +499,7 @@ const weatherPayload = (state: string) =>
         readings: new Map([['weather.home', { kind: 'text', candidates: [state], isPlaying: false } as Reading]]),
         states: new Map([['weather.home', state]]),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
 Deno.test('a display chosen by state draws the case listing the state, as its custom body', () => {
@@ -523,11 +543,13 @@ const solarDisplay = {
     pixels: decodeLedEntries(SOLAR, PANEL_LEDS) as string[],
     // The picture runs a column under the text, which Lighten allows.
     textStart: 8,
-    color: [230, 255, 244] as RGBColor,
-    speed: 128,
     text: '{{value}}',
-    font: 1 as const,
-    yOffset: 161,
+    settings: {
+        color: [230, 255, 244] as RGBColor,
+        speed: 128,
+        font: 1 as const,
+        yOffset: 161,
+    },
 };
 
 const iconTextPayload = (display: PlainDisplay, others: PanelEntity[] = []) =>
@@ -538,6 +560,7 @@ const iconTextPayload = (display: PlainDisplay, others: PanelEntity[] = []) =>
         readings: new Map([['sensor.solar', { kind: 'text', candidates: ['1.2kW'], isPlaying: false } as Reading]]),
         states: new Map([['sensor.solar', '1.2kW']]),
         brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
     });
 
 Deno.test('an icon beside text sends the glyph exactly as the hand-written body did', () => {
@@ -568,7 +591,7 @@ Deno.test('an icon beside text switches off the other segments, and owns 0 and 1
     const elsewhere: PanelEntity = {
         entityId: 'sensor.other',
         kind: 'text',
-        display: { style: 'text', segmentId: 2, color: [1, 2, 3], speed: 1, text: '{{value}}' },
+        display: { style: 'text', segmentId: 2, text: '{{value}}', settings: { color: [1, 2, 3], speed: 1 } },
     };
     const segments = iconTextPayload(solarDisplay, [elsewhere]).seg as Segment[];
     const off = segments.filter(segment => segment.on === false).map(segment => segment.id);
@@ -587,4 +610,94 @@ Deno.test('an icon beside text works as a case of a display chosen by state', ()
 
     assertSame(JSON.stringify(segments[0].i), JSON.stringify(SOLAR), 'the case’s glyph');
     assertSame(segments[1].start, 8, 'and its text');
+});
+
+const oneTextView = (settings: Record<string, unknown>, global = GLOBAL_TEXT) => {
+    const display = { style: 'text' as const, segmentId: 0, text: '{{value}}', settings };
+    const payload = toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.a' },
+        entities: [{ entityId: 'sensor.a', kind: 'text', display }] as PanelEntity[],
+        flowDisplays: [],
+        states: new Map(),
+        readings: new Map([['sensor.a', { kind: 'text', candidates: ['hi'], isPlaying: false } as Reading]]),
+        brightness: BRIGHTNESS,
+        textSettings: global,
+    });
+    return firstSegment(payload);
+};
+
+Deno.test('every slider the effect has goes out on a text segment', () => {
+    const segment = oneTextView({});
+
+    assertSame(segment.sx, GLOBAL_TEXT.speed, 'the speed');
+    assertSame(segment.ix, GLOBAL_TEXT.yOffset, 'the Y offset');
+    assertSame(segment.c1, 0, 'the trail, where a plain text segment used to inherit 128');
+    assertSame(segment.c2, 0, 'the font');
+    assertSame(segment.c3, 16, 'the rotation, where upright is 16 rather than 0');
+    assertSame(segment.o1, false, 'the gradient checkbox');
+    assertSame(segment.o3, false, 'and the scroll direction');
+});
+
+Deno.test('a view with no settings of its own takes every one from the global', () => {
+    const global: TextSettings = {
+        ...GLOBAL_TEXT,
+        color: [1, 2, 3],
+        speed: 11,
+        trail: 200,
+        font: 3,
+        rotation: 'upsideDown',
+        gradient: true,
+        gradientColor: [9, 8, 7],
+        reverse: true,
+    };
+    const segment = oneTextView({}, global);
+
+    assertSame(segment.sx, 11, 'the global speed');
+    assertSame(segment.c1, 200, 'the global trail');
+    assertSame(segment.c2, 192, 'font 3 as the lowest c2 that picks it');
+    assertSame(segment.c3, 0, 'a half turn is c3 0');
+    assertSame(segment.o1, true, 'the global gradient');
+    assertSame(segment.o3, true, 'the global direction');
+    const colours = segment.col as unknown[];
+    assertSame(JSON.stringify(colours[0]), '[1,2,3]', 'the global colour');
+    assertSame(JSON.stringify(colours[2]), '[9,8,7]', 'and its far end in col[2], where a gradient ends');
+});
+
+Deno.test('a view overrides only the settings it names, and the rest still follow the global', () => {
+    const segment = oneTextView({ speed: 5, trail: 90 });
+
+    assertSame(segment.sx, 5, 'its own speed');
+    assertSame(segment.c1, 90, 'its own trail');
+    assertSame(segment.ix, GLOBAL_TEXT.yOffset, 'the global Y offset, which it did not take over');
+    assertSame(segment.c3, 16, 'and the global rotation');
+});
+
+Deno.test('a false override is an override, not an absence', () => {
+    const global: TextSettings = { ...GLOBAL_TEXT, gradient: true, reverse: true };
+    const segment = oneTextView({ gradient: false, reverse: false }, global);
+
+    assertSame(segment.o1, false, 'the view turned the gradient off against a global that has it on');
+    assertSame(segment.o3, false, 'and the direction back');
+});
+
+Deno.test('both styles that draw text read the same settings', () => {
+    const global: TextSettings = { ...GLOBAL_TEXT, trail: 40, rotation: 'clockwise', reverse: true };
+    const plain = oneTextView({ speed: 99 }, global);
+    const icon = (toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.solar' },
+        entities: [{
+            entityId: 'sensor.solar',
+            kind: 'text',
+            display: { ...solarDisplay, settings: { speed: 99 } },
+        }] as PanelEntity[],
+        flowDisplays: [],
+        states: new Map(),
+        readings: new Map([['sensor.solar', { kind: 'text', candidates: ['hi'], isPlaying: false } as Reading]]),
+        brightness: BRIGHTNESS,
+        textSettings: global,
+    }).seg as Segment[])[1];
+
+    for (const slider of ['sx', 'ix', 'c1', 'c2', 'c3', 'o1', 'o3']) {
+        assertSame(icon[slider], plain[slider], `${slider} is the same on the icon view's text half`);
+    }
 });

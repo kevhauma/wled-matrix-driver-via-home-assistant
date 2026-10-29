@@ -1,4 +1,9 @@
-import { card, field, fromHex, iconButton, make, option, sliderField, toHex } from '/dom.js';
+import { card, field, fromHex, iconButton, make, option, toHex } from '/dom.js';
+import {
+    resolveTextSettings,
+    TEXT_SETTINGS,
+    TEXT_SETTINGS_HELP,
+} from '/textSettings.js';
 import { postJson, requestJson } from '/api.js';
 import { createLocalPicker } from '/picker.js';
 import { createIconPainter } from '/iconPainter.js';
@@ -23,6 +28,7 @@ const WARNING_TEXT = {
     strippedNonAscii: 'characters removed — the device fonts are ASCII only',
     shortened: 'too long, so a shorter form was used',
     scrolls: 'longer than the panel, so it scrolls',
+    scrollsVertically: 'a y offset of exactly 0 or 255 makes text that fits scroll up or down',
     segmentNameTooLong: 'a segment name is over 32 characters, so the device will cut it',
 };
 
@@ -117,30 +123,38 @@ const segmentIdOf = display => {
     return first?.id ?? 0;
 };
 
+/** `fonts.ts`'s `fontSliderOf`: the lowest `c2` that selects each font. */
+const FONT_SLIDERS = [0, 64, 128, 192, 255];
+
+/** `fonts.ts`'s `rotationSliderOf`: the lowest `c3` that selects each rotation. */
+const ROTATION_SLIDERS = { upsideDown: 0, clockwise: 8, normal: 16, counterClockwise: 24 };
+
 /**
  * What switching to `custom` starts from: the body the `text` style would have
- * sent for this entity, its template included. An empty object would be a worse start — you would have
- * to know the effect id, which sliders matter and that `ix` and `c2` have to be
- * pinned before anything appeared on the panel at all.
+ * sent for this entity, its template and its resolved settings included. An
+ * empty object would be a worse start — you would have to know the effect id,
+ * which sliders matter and that every one of them has to be pinned before
+ * anything appeared on the panel at all.
  */
-const customSeed = (display, segmentId, color) => ({
+const customSeed = (display, segmentId, settings) => ({
     on: true,
     seg: [{
         id: segmentId,
         fx: 122,
-        n: display.style === 'text' ? display.text : '{{value}}',
-        sx: display.style === 'text' ? display.speed : 80,
-        ix: 128,
-        c2: 0,
-        col: [color, [0, 0, 0], color],
+        n: display.text ?? '{{value}}',
+        sx: settings.speed,
+        ix: settings.yOffset,
+        c1: settings.trail,
+        c2: FONT_SLIDERS[settings.font],
+        c3: ROTATION_SLIDERS[settings.rotation],
+        o1: settings.gradient,
+        o3: settings.reverse,
+        col: [settings.color, [0, 0, 0], settings.gradientColor],
     }],
 });
 
 const PANEL_COLUMNS = 32;
 const PANEL_ROWS = 8;
-
-/** The names in `fonts.ts`, which this cannot import either. */
-const FONT_NAMES = ['tom-thumb, 6 high', 'TinyUnicode', 'console 6x8', 'c64esque', '5x12, cropped'];
 
 /** Which font a raw `c2` picks: WLED maps 0-255 onto 0-4, truncating. */
 const fontOfSlider = slider => {
@@ -180,49 +194,142 @@ const iconTextFromCustom = display => {
 
     const firstColour = named.col?.[0];
     const textStart = Math.max(1, Math.min(PANEL_COLUMNS - 1, named.start ?? 8));
+    /**
+     * Everything the body said is kept as this view's own, because a body
+     * written by hand said it on purpose. What it left out follows the global.
+     */
+    const settings = {
+        color: Array.isArray(firstColour) ? firstColour.slice(0, 3) : WHITE,
+        speed: named.sx ?? 128,
+        font: fontOfSlider(named.c2),
+        yOffset: named.ix ?? 128,
+    };
     return {
         style: 'iconText',
         pixels,
         textStart,
-        color: Array.isArray(firstColour) ? firstColour.slice(0, 3) : WHITE,
-        speed: named.sx ?? 128,
         text: named.n === '' ? '{{value}}' : named.n,
-        font: fontOfSlider(named.c2),
-        yOffset: named.ix ?? 128,
+        settings,
     };
 };
+
+/** Which of the four styles keeps its own text settings. */
+const drawsText = display => display.style === 'text' || display.style === 'iconText';
+
+/**
+ * The colour a display is showing right now, wherever it keeps it — which for
+ * a text view is the global unless it overrides it, and for a custom one is
+ * inside the body it owns, so there is nothing to find.
+ */
+const colourOf = (display, global) => {
+    if (drawsText(display)) {
+        const settings = resolveTextSettings(global, display.settings);
+        return settings.color;
+    }
+    return display.color ?? global.color;
+};
+
+const sameColour = (one, other) => JSON.stringify(one) === JSON.stringify(other);
 
 /**
  * Keeping the segment and the colour across a style change: being made to pick
  * a colour again because you changed how the value is drawn reads as the
- * editor having forgotten it.
+ * editor having forgotten it. Everything else a new text view takes from the
+ * global, so it is one override rather than a copy of all nine — and a colour
+ * the global already has is left to the global too.
  */
-const toStyle = (style, current) => {
+const toStyle = (style, current, global) => {
     if (style === 'byState') {
         return { style: 'byState', cases: [], otherwise: structuredClone(plainOf(current)) };
     }
 
     const display = plainOf(current);
     const segmentId = segmentIdOf(display);
-    const color = display.color ?? WHITE;
+    const color = colourOf(display, global);
+    const keptColour = sameColour(color, global.color) ? {} : { color };
 
     if (style === 'bar') {
         return { style: 'bar', segmentId, color, trackColor: [0, 20, 40] };
     }
     if (style === 'text') {
-        return { style: 'text', segmentId, color, speed: 70, text: '{{value}}' };
+        return { style: 'text', segmentId, text: '{{value}}', settings: keptColour };
     }
     if (style === 'iconText') {
         const converted = iconTextFromCustom(display);
         if (converted !== undefined) {
             return converted;
         }
-        const text = display.style === 'text' ? display.text : '{{value}}';
+        const text = display.text ?? '{{value}}';
         const pixels = new Array(PANEL_COLUMNS * PANEL_ROWS).fill('000000');
-        return { style: 'iconText', pixels, textStart: 9, color, speed: 128, text, font: 0, yOffset: 128 };
+        return { style: 'iconText', pixels, textStart: 9, text, settings: keptColour };
     }
-    const payload = customSeed(display, segmentId, color);
+
+    const own = drawsText(display) ? display.settings : {};
+    const settings = resolveTextSettings(global, { ...own, color });
+    const payload = customSeed(display, segmentId, settings);
     return { style: 'custom', payload };
+};
+
+/**
+ * One view's text settings: each follows the global until it is overridden,
+ * and the control shows the value in force either way. Taking an override on
+ * copies the global's current value, so the panel does not change until you
+ * then edit it; letting it go deletes the key, which is what the service reads
+ * as "follow the global".
+ *
+ * The toggle sits outside the `<label>` on purpose — a button inside one
+ * activates the label's own control as well as itself.
+ */
+const overrideFields = (settings, global, context, refresh) =>
+    TEXT_SETTINGS.map(setting => {
+        const { name, label } = setting;
+        const isOwn = settings[name] !== undefined;
+        const effective = isOwn ? settings[name] : global[name];
+
+        const control = setting.build(label, effective, value => {
+            settings[name] = value;
+            context.edited();
+            refresh();
+        });
+        if (!isOwn) {
+            for (const input of control.querySelectorAll('input, select')) {
+                input.disabled = true;
+            }
+        }
+
+        const toggle = make('button', {
+            class: 'small',
+            type: 'button',
+            textContent: isOwn ? 'its own' : 'global',
+            title: isOwn
+                ? 'Go back to the global setting on the Settings tab'
+                : 'Override this for this view only',
+            onClick: () => {
+                if (isOwn) {
+                    delete settings[name];
+                } else {
+                    settings[name] = structuredClone(global[name]);
+                }
+                context.changed();
+            },
+        });
+
+        return make('div', { class: isOwn ? 'setting own' : 'setting' }, [control, toggle]);
+    });
+
+/** The override block both text styles end with. */
+const textSettingsCard = (display, context, refresh) => {
+    const global = context.config.textSettings;
+    return card('How this view looks', [
+        make('div', { class: 'fields' }, overrideFields(display.settings, global, context, refresh)),
+    ], [
+        'Each setting follows the global on the Settings tab until you press its '
+            + 'button to take it over here, so a change to the global reaches this view '
+            + 'for everything it has not taken over.',
+        'Taking one over copies the global\u2019s current value, so nothing changes on the '
+            + 'panel until you then edit it. Pressing the button again hands it back.',
+        ...TEXT_SETTINGS_HELP,
+    ]);
 };
 
 const customFields = (view, context, refresh) => {
@@ -523,7 +630,7 @@ const displayFields = (view, context, refresh) => {
             // The draft belongs to the body being replaced, so keeping it would
             // put the old JSON back the next time `custom` was chosen.
             forgetDrafts(view.key);
-            holder.display = toStyle(style, display);
+            holder.display = toStyle(style, display, context.config.textSettings);
             context.changed();
         },
     }, styles);
@@ -547,14 +654,6 @@ const displayFields = (view, context, refresh) => {
         ]);
     }
 
-    const colour = make('input', {
-        type: 'color',
-        value: toHex(display.color),
-        onInput: event => {
-            display.color = fromHex(event.target.value);
-            edited();
-        },
-    });
 
     /**
      * The template gets a row of its own: it is the one field here you type
@@ -597,13 +696,6 @@ const displayFields = (view, context, refresh) => {
                 edited();
             },
         });
-        const font = make('select', {
-            onChange: event => {
-                display.font = Number(event.target.value);
-                edited();
-            },
-        }, FONT_NAMES.map((name, index) => option(String(index), `${index} — ${name}`, index === display.font)));
-
         return make('div', { class: 'display-fields' }, [
             painter.node,
             templateRow(),
@@ -611,17 +703,8 @@ const displayFields = (view, context, refresh) => {
                 format,
                 field('drawn as', stylePicker),
                 field('text starts at column', textStart),
-                field('colour', colour),
-                field('font', font),
-                sliderField('scroll speed', display.speed, value => {
-                    display.speed = value;
-                    edited();
-                }),
-                sliderField('y offset', display.yOffset, value => {
-                    display.yOffset = value;
-                    edited();
-                }),
             ].filter(Boolean)),
+            textSettingsCard(display, context, refresh),
         ]);
     }
 
@@ -640,10 +723,19 @@ const displayFields = (view, context, refresh) => {
         format,
         field('drawn as', stylePicker),
         field('segment', segment),
-        field('colour', colour),
     ].filter(Boolean);
 
     if (display.style === 'bar') {
+        // A bar's colours are its own: they are not text, so the text
+        // settings have nothing to say about them.
+        fields.push(field('colour', make('input', {
+            type: 'color',
+            value: toHex(display.color),
+            onInput: event => {
+                display.color = fromHex(event.target.value);
+                edited();
+            },
+        })));
         fields.push(field('track colour', make('input', {
             type: 'color',
             value: toHex(display.trackColor),
@@ -652,19 +744,14 @@ const displayFields = (view, context, refresh) => {
                 edited();
             },
         })));
-    } else {
-        fields.push(sliderField('scroll speed', display.speed, value => {
-            display.speed = value;
-            edited();
-        }));
+        return make('div', { class: 'fields' }, fields);
     }
 
-    const fieldGrid = make('div', { class: 'fields' }, fields);
-    if (display.style !== 'text') {
-        return fieldGrid;
-    }
-
-    return make('div', { class: 'display-fields' }, [templateRow(), fieldGrid]);
+    return make('div', { class: 'display-fields' }, [
+        templateRow(),
+        make('div', { class: 'fields' }, fields),
+        textSettingsCard(display, context, refresh),
+    ]);
 };
 
 /**
@@ -739,6 +826,11 @@ const refreshPreview = async (view, sample, nodes, context) => {
             return;
         }
 
+        /**
+         * The settings as the server resolved them, not as this tab is editing
+         * them: for a display chosen by state that is the matched case's, and
+         * for any of them it is the global with the view's own already on top.
+         */
         if (display.style === 'iconText') {
             const columns = PANEL_COLUMNS - display.textStart;
             const movement = result.textLayout.motion === 'across' ? 'scrolls' : 'fits';
@@ -749,8 +841,7 @@ const refreshPreview = async (view, sample, nodes, context) => {
                 pixels: display.pixels,
                 textStart: display.textStart,
                 layout: result.textLayout,
-                color: display.color,
-                speed: display.speed,
+                settings: result.textSettings,
             });
             return;
         }
@@ -766,15 +857,13 @@ const refreshPreview = async (view, sample, nodes, context) => {
             return;
         }
 
-        const movement = result.length > result.visible ? 'scrolls' : 'fits';
+        const movement = result.textLayout.motion === 'across' ? 'scrolls' : 'fits';
         nodes.readout.textContent = `"${result.text}" — ${result.length} of 32 characters, `
-            + `${result.visible} fit at once, so it ${movement}`;
+            + `${result.textLayout.width} of 32 columns wide, so it ${movement}`;
         preview.show({
             kind: 'text',
-            text: result.text,
-            visible: result.visible,
-            color: display.color,
-            speed: display.speed,
+            layout: result.textLayout,
+            settings: result.textSettings,
         });
     } catch (error) {
         /**

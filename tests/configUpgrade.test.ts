@@ -126,3 +126,66 @@ Deno.test('a version 4 case lists states, so it says so, wherever its display is
     assertSame(loop.do === 'loop' && testsOf(loop.members[0].display), 'is', 'a loop member’s');
     assertSame('test' in weather.cases[0], false, 'and the file as read is not changed');
 });
+
+Deno.test('version 5 moves a text view’s settings into its own, keeping only what differs', () => {
+    const version5 = {
+        version: 5,
+        output: { wledIp: '', brightness: 80, timeZone: '' },
+        entities: [
+            {
+                // Exactly the old defaults, so it ends up following the global.
+                entityId: 'sensor.plain',
+                kind: 'text',
+                display: { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 70, text: '{{value}}' },
+            },
+            {
+                entityId: 'sensor.loud',
+                kind: 'text',
+                display: { style: 'text', segmentId: 0, color: [255, 0, 0], speed: 10, text: '{{value}}' },
+            },
+            {
+                entityId: 'sensor.solar',
+                kind: 'text',
+                display: {
+                    style: 'iconText',
+                    pixels: new Array(256).fill('000000'),
+                    textStart: 8,
+                    color: [255, 255, 255],
+                    speed: 70,
+                    text: '{{value}}',
+                    font: 2,
+                    yOffset: 161,
+                },
+            },
+            {
+                entityId: 'sensor.battery',
+                kind: 'percent',
+                display: { style: 'bar', segmentId: 0, color: [0, 255, 80], trackColor: [0, 20, 40] },
+            },
+        ],
+        flow: [{ id: 'idle', match: 'all', conditions: [], action: { do: 'blank' } }],
+    };
+
+    const { config, upgradedFrom } = upgradePanelConfig(version5);
+    const parsed = parsePanelConfig(config);
+    const settingsOf = (index: number) => {
+        const display = parsed.entities[index].display;
+        const own = display.style === 'text' || display.style === 'iconText' ? display.settings : {};
+        return JSON.stringify(own);
+    };
+
+    assertSame(upgradedFrom, 5, 'from version 5');
+    assertSame(parsed.version, CONFIG_VERSION, 'to the current one');
+    assertSame(parsed.textSettings.speed, 70, 'the global takes what a text display was seeded with');
+    assertSame(parsed.textSettings.font, 0, 'and the font every plain text segment was pinned to');
+    assertSame(parsed.textSettings.trail, 0, 'the trail it adds is no trail, as the icon style hardcoded');
+    assertSame(parsed.textSettings.rotation, 'normal', 'and upright, which is c3 16 rather than 0');
+
+    assertSame(settingsOf(0), '{}', 'a view that matched the old defaults now follows the global');
+    assertSame(settingsOf(1), '{"color":[255,0,0],"speed":10}', 'one that differed keeps both');
+    assertSame(settingsOf(2), '{"yOffset":161,"font":2}', 'an icon view keeps only its offset and font');
+
+    const bar = parsed.entities[3].display;
+    assertSame(bar.style === 'bar' && JSON.stringify(bar.color), '[0,255,80]', 'a bar keeps its own colour');
+    assertSame('settings' in version5.entities[0].display, false, 'and the file as read is not changed');
+});

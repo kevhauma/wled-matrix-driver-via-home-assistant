@@ -219,6 +219,7 @@ export const startServer = (
                 ...current,
                 entities: record.entities ?? current.entities,
                 flow: record.flow ?? current.flow,
+                textSettings: record.textSettings ?? current.textSettings,
             });
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
@@ -236,6 +237,7 @@ export const startServer = (
                 unit,
                 sampleArtist,
                 brightness: draft.output.brightness,
+                textSettings: draft.textSettings,
                 timeZone: draft.output.timeZone,
                 liveReadings: new Map(Object.entries(bridge.snapshot().readings)),
             });

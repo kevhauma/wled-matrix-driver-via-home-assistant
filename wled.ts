@@ -1,5 +1,13 @@
-import { matchesStateCase, PanelEntity, PlainDisplay, RGBColor, WledDisplay } from './entities.ts';
-import { fontSliderOf } from './fonts.ts';
+import {
+    matchesStateCase,
+    PanelEntity,
+    PlainDisplay,
+    resolveTextSettings,
+    RGBColor,
+    TextSettings,
+    WledDisplay,
+} from './entities.ts';
+import { fontSliderOf, rotationSliderOf } from './fonts.ts';
 import { encodeLedEntries } from './ledEntries.ts';
 import { Reading, UNAVAILABLE } from './readings.ts';
 import { EntityValues, fillTemplate, PlaceholderValues } from './template.ts';
@@ -29,22 +37,20 @@ const PERCENT_EFFECT_ID = 98;
 export const MAX_TEXT_LENGTH = 32;
 
 /**
- * `EFFECT_FONT_SIZE` is `map(c2, 0, 255, 0, 4)` — five built-in fonts, with
- * thresholds at 64, 128, 192 and 255. Pinned rather than left alone, because
- * otherwise the panel uses whatever was last set in the device's own UI and
- * neither this service nor the editor's preview can know how much text fits.
+ * The sliders this effect reads, from its own metadata:
+ * `"Scrolling Text@!,Y Offset,Trail,Font size,Rotate,Gradient,Custom Font,Reverse"`
+ * — `sx`, `ix`, `c1`, `c2`, `c3`, `o1`, `o2`, `o3`. Every one of them is a
+ * text setting now, bar `o2` (*Custom Font*), which reads a font file uploaded
+ * to the device that nothing here can put there.
+ *
+ * `c2` picks the font as `map(c2, 0, 255, 0, 4)` and `c3` the rotation as
+ * `map(c3, 0, 31, -2, 2)`; `fonts.ts` owns both mappings.
  */
-const FONT_SIZE_SLIDER = 0;
 
 /** Font 0 is 4px wide, so eight glyphs are exactly the 32 columns of a panel. */
 export const LETTER_WIDTH = 4;
 
-/**
- * `EFFECT_Y_OFFSET`. Scrolling Text centres text that fits the segment, but at
- * 0 or 255 it then scrolls it *vertically* instead; 128 is the static middle.
- * Unpinned, a short reading like `18C` can sit there crawling upwards.
- */
-const Y_OFFSET = 128;
+
 
 /**
  * The 2D segment flags a bar sets; text leaves them at `SEGMENT_RESET`'s.
@@ -314,7 +320,32 @@ export const toEntityValues = (readings: ReadonlyMap<string, Reading>): EntityVa
         return values;
     };
 
-const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues): WledPayload => {
+/**
+ * The settings as the effect's own sliders. Shared by both styles that draw
+ * text, so a view's look cannot depend on which of them is drawing it.
+ *
+ * `col[2]` is the gradient's far end, which the effect reads only while `o1`
+ * is set — and then only because `pal` is 0, which `SEGMENT_RESET` pins. With
+ * the checkbox clear it forces both ends to `col[0]` itself, so what goes in
+ * this slot then makes no difference.
+ */
+const toTextSliders = (settings: TextSettings): WledPayload => ({
+    sx: settings.speed,
+    ix: settings.yOffset,
+    c1: settings.trail,
+    c2: fontSliderOf(settings.font),
+    c3: rotationSliderOf(settings.rotation),
+    o1: settings.gradient,
+    o3: settings.reverse,
+    col: [settings.color, BLACK, settings.gradientColor],
+});
+
+const toSegment = (
+    display: DrawnDisplay,
+    reading: Reading,
+    others: EntityValues,
+    textSettings: TextSettings,
+): WledPayload => {
     const base = { id: display.segmentId };
 
     if (display.style === 'bar') {
@@ -336,14 +367,12 @@ const toSegment = (display: DrawnDisplay, reading: Reading, others: EntityValues
     }
 
     const text = toDisplayText(display, reading, others);
+    const settings = resolveTextSettings(textSettings, display.settings);
     return {
         ...base,
         fx: SCROLLING_TEXT_EFFECT_ID,
         n: text,
-        sx: display.speed,
-        ix: Y_OFFSET,
-        c2: FONT_SIZE_SLIDER,
-        col: [display.color, BLACK, display.color],
+        ...toTextSliders(settings),
     };
 };
 
@@ -353,9 +382,11 @@ const toIconTextSegments = (
     display: IconTextDisplay,
     reading: Reading,
     others: EntityValues,
+    textSettings: TextSettings,
 ): WledPayload[] => {
     const entries = encodeLedEntries(display.pixels);
     const text = toDisplayText(display, reading, others);
+    const settings = resolveTextSettings(textSettings, display.settings);
     return [
         {
             id: ICON_SEGMENT_ID,
@@ -370,13 +401,8 @@ const toIconTextSegments = (
             start: display.textStart,
             fx: SCROLLING_TEXT_EFFECT_ID,
             n: text,
-            sx: display.speed,
-            ix: display.yOffset,
-            // Trail: none, or a scrolling reading smears.
-            c1: 0,
-            c2: fontSliderOf(display.font),
             bm: LIGHTEN_BLEND_MODE,
-            col: [display.color, BLACK, display.color],
+            ...toTextSliders(settings),
         },
     ];
 };
@@ -397,10 +423,12 @@ export type PayloadInput = {
      */
     states: ReadonlyMap<string, string>,
     brightness: number,
+    /** The global every text view's own settings are layered over. */
+    textSettings: TextSettings,
 };
 
 export const toWledPayload = (
-    { decision, entities, flowDisplays, readings, states, brightness }: PayloadInput,
+    { decision, entities, flowDisplays, readings, states, brightness, textSettings }: PayloadInput,
 ): WledPayload => {
     if (decision.show === 'nothing') {
         return { on: false };
@@ -454,12 +482,12 @@ export const toWledPayload = (
     }
 
     if (display.style === 'iconText') {
-        const segments = toIconTextSegments(display, reading, otherValues);
+        const segments = toIconTextSegments(display, reading, otherValues, textSettings);
         const own = segments.map(toResetSegment);
         return { on: true, bri: brightness, seg: [...own, ...others] };
     }
 
-    const drawn = toSegment(display, reading, otherValues);
+    const drawn = toSegment(display, reading, otherValues, textSettings);
     const segment = toResetSegment(drawn);
     return { on: true, bri: brightness, seg: [segment, ...others] };
 };

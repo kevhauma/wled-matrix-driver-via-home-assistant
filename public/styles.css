@@ -627,6 +627,34 @@ label.field {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+/**
+ * One text setting with the button that says where its value comes from. The
+ * button is a sibling of the label rather than inside it, because a button
+ * inside a label activates the label's own control too.
+ */
+.setting {
+    display: grid;
+    gap: 5px;
+    align-content: start;
+}
+
+.setting:not(.own) label.field {
+    opacity: 0.6;
+}
+
+.setting.own > button {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/** A checkbox reads the other way round: the box, then what it turns on. */
+label.field.check {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 8px;
+    align-content: start;
+}
+
 .row {
     display: flex;
     gap: 10px;

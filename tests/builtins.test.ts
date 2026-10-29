@@ -10,7 +10,7 @@ import {
 } from '../builtins.ts';
 import { readBuiltin } from '../readings.ts';
 import { toWledPayload } from '../wled.ts';
-import { PanelEntity } from '../entities.ts';
+import { DEFAULT_TEXT_SETTINGS, PanelEntity } from '../entities.ts';
 import { Reading } from '../readings.ts';
 
 /**
@@ -149,7 +149,7 @@ Deno.test('a clock reaches the device as an ordinary text segment', () => {
         entityId: BuiltinIds.Time,
         kind: 'text',
         format: 'hour24',
-        display: { style: 'text', segmentId: 0, color: [255, 255, 255], speed: 60, text: 'at {{value}}' },
+        display: { style: 'text', segmentId: 0, text: 'at {{value}}', settings: { speed: 60 } },
     };
     const readings = new Map<string, Reading>([
         [BuiltinIds.Time, readBuiltin('hour24', AFTERNOON)],
@@ -162,6 +162,7 @@ Deno.test('a clock reaches the device as an ordinary text segment', () => {
         states: new Map(),
         readings,
         brightness: 80,
+        textSettings: DEFAULT_TEXT_SETTINGS,
     });
 
     const segments = payload.seg as Record<string, unknown>[];

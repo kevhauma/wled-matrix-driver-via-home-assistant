@@ -1,9 +1,28 @@
 {
-    "version": 5,
+    "version": 6,
     "output": {
         "wledIp": "",
         "brightness": 80,
         "timeZone": ""
+    },
+    "textSettings": {
+        "color": [
+            255,
+            255,
+            255
+        ],
+        "gradientColor": [
+            255,
+            255,
+            255
+        ],
+        "speed": 70,
+        "yOffset": 128,
+        "trail": 0,
+        "font": 0,
+        "rotation": "normal",
+        "gradient": false,
+        "reverse": false
     },
     "entities": [
         {
@@ -12,13 +31,10 @@
             "display": {
                 "style": "text",
                 "segmentId": 0,
-                "color": [
-                    255,
-                    255,
-                    255
-                ],
-                "speed": 80,
-                "text": "{{value}}"
+                "text": "{{value}}",
+                "settings": {
+                    "speed": 80
+                }
             }
         },
         {
@@ -27,13 +43,10 @@
             "display": {
                 "style": "text",
                 "segmentId": 0,
-                "color": [
-                    255,
-                    255,
-                    255
-                ],
-                "speed": 80,
-                "text": "{{value}}"
+                "text": "{{value}}",
+                "settings": {
+                    "speed": 80
+                }
             }
         },
         {
@@ -42,13 +55,15 @@
             "display": {
                 "style": "text",
                 "segmentId": 0,
-                "color": [
-                    255,
-                    160,
-                    0
-                ],
-                "speed": 60,
-                "text": "{{value}}"
+                "text": "{{value}}",
+                "settings": {
+                    "color": [
+                        255,
+                        160,
+                        0
+                    ],
+                    "speed": 60
+                }
             }
         },
         {
@@ -76,13 +91,15 @@
             "display": {
                 "style": "text",
                 "segmentId": 0,
-                "color": [
-                    110,
-                    175,
-                    255
-                ],
-                "speed": 60,
-                "text": "{{value}}"
+                "text": "{{value}}",
+                "settings": {
+                    "color": [
+                        110,
+                        175,
+                        255
+                    ],
+                    "speed": 60
+                }
             }
         },
         {
@@ -92,13 +109,15 @@
             "display": {
                 "style": "text",
                 "segmentId": 0,
-                "color": [
-                    110,
-                    175,
-                    255
-                ],
-                "speed": 60,
-                "text": "{{value}}"
+                "text": "{{value}}",
+                "settings": {
+                    "color": [
+                        110,
+                        175,
+                        255
+                    ],
+                    "speed": 60
+                }
             }
         }
     ],
@@ -141,11 +160,11 @@
                 "do": "loop",
                 "members": [
                     {
-                        "id": "sensor.kitchen_temperature",
+                        "id": "temperature",
                         "entityId": "sensor.kitchen_temperature"
                     },
                     {
-                        "id": "sensor.battery_level",
+                        "id": "battery",
                         "entityId": "sensor.battery_level"
                     }
                 ],

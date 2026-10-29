@@ -1,5 +1,5 @@
 import { BuiltinFormat, BuiltinIds, defaultFormatFor } from './builtins.ts';
-import { TextFont } from './fonts.ts';
+import { TextFont, TextRotation } from './fonts.ts';
 
 /**
  * The registry: every entity the panel knows about, what kind of value it
@@ -15,6 +15,93 @@ import { TextFont } from './fonts.ts';
  */
 
 export type RGBColor = [number, number, number];
+
+/**
+ * How text looks, apart from what it says: every knob WLED's Scrolling Text
+ * effect has, bar the *Custom Font* checkbox — that one needs a font file
+ * uploaded to the device, which nothing here can put there.
+ *
+ * This is the shape of the configuration's `textSettings`, which both styles
+ * that draw text inherit. A display stores only the ones it sets for itself,
+ * as `TextOverrides`, so changing a global reaches the rest of them.
+ */
+export type TextSettings = {
+    color: RGBColor,
+    /**
+     * The far end of the gradient, `col[2]`, read only while `gradient` is on.
+     * Equal to `color` draws no visible gradient, which is what the effect
+     * does by itself when the checkbox is off.
+     */
+    gradientColor: RGBColor,
+    /** Scroll speed, `sx`, 0-255 as in the WLED UI. */
+    speed: number,
+    /**
+     * `ix`, 0-255; 128 is the vertical middle. At exactly 0 or 255, text that
+     * fits the segment scrolls up or down instead of sitting still.
+     */
+    yOffset: number,
+    /**
+     * `c1`, 0-255: how much of the last frame each new one leaves behind, as
+     * `fade_out(255 - (c1 >> 4))`. 0 is no trail, which is what a scrolling
+     * reading wants — anything else smears it.
+     */
+    trail: number,
+    /** One of WLED 16's built-in fonts, sent as `c2` — see `fonts.ts`. */
+    font: TextFont,
+    /** Which way up the letters are, sent as `c3` — see `fonts.ts`. */
+    rotation: TextRotation,
+    /** `o1`: draw the letters as a gradient from `color` to `gradientColor`. */
+    gradient: boolean,
+    /** `o3`: scroll left to right rather than right to left. */
+    reverse: boolean,
+};
+
+/**
+ * What one text view sets for itself. Every key left out is taken from the
+ * configuration's `textSettings` instead, which is what makes a global edit
+ * reach a view that already exists.
+ */
+export type TextOverrides = Partial<TextSettings>;
+
+/**
+ * The global's own starting values. The colour and speed are what a text
+ * display used to be seeded with; the font and Y offset are the values
+ * `wled.ts` used to pin for every plain text segment, so a panel reads the
+ * same after the upgrade as before it. The rest are WLED's own defaults for
+ * the effect — no trail, upright, no gradient, scrolling right to left.
+ */
+export const DEFAULT_TEXT_SETTINGS: TextSettings = {
+    color: [255, 255, 255],
+    gradientColor: [255, 255, 255],
+    speed: 70,
+    yOffset: 128,
+    trail: 0,
+    font: 0,
+    rotation: 'normal',
+    gradient: false,
+    reverse: false,
+};
+
+/**
+ * A text view's effective look. Written out field by field rather than as a
+ * spread so that a key present but undefined — which `structuredClone` of a
+ * half-cleared override can leave behind — still falls through to the global,
+ * and so that adding a setting without handling it here will not compile.
+ */
+export const resolveTextSettings = (
+    global: TextSettings,
+    overrides: TextOverrides,
+): TextSettings => ({
+    color: overrides.color ?? global.color,
+    gradientColor: overrides.gradientColor ?? global.gradientColor,
+    speed: overrides.speed ?? global.speed,
+    yOffset: overrides.yOffset ?? global.yOffset,
+    trail: overrides.trail ?? global.trail,
+    font: overrides.font ?? global.font,
+    rotation: overrides.rotation ?? global.rotation,
+    gradient: overrides.gradient ?? global.gradient,
+    reverse: overrides.reverse ?? global.reverse,
+});
 
 export const ReadingKinds = {
     /** Numeric state treated as 0-100. */
@@ -41,15 +128,18 @@ export type PlainDisplay =
     | {
         style: 'text',
         segmentId: number,
-        color: RGBColor,
-        /** Scroll speed, 0-255 as in the WLED UI. */
-        speed: number,
         /**
          * What the segment name says, with `template.ts`'s placeholders:
          * `'{{value}}'` on its own, or with anything around it, e.g.
          * `'PV {{value}}W'`. That is the whole of prefixes and suffixes.
          */
         text: string,
+        /**
+         * Only what this view sets for itself; `{}` follows the global
+         * `textSettings` entirely. Nested rather than spread flat so that a
+         * setting it has overridden can be told from one it has not.
+         */
+        settings: TextOverrides,
     }
     | {
         style: 'bar',
@@ -70,12 +160,9 @@ export type PlainDisplay =
         /** The whole 32x8 panel, row by row, each `'RRGGBB'`: segment 0 exactly. */
         pixels: string[],
         textStart: number,
-        color: RGBColor,
-        speed: number,
         text: string,
-        font: TextFont,
-        /** `ix`, 0-255. 128 is the static middle; 0 and 255 scroll it vertically. */
-        yOffset: number,
+        /** Its text half's own settings, over the global, exactly as `text`'s. */
+        settings: TextOverrides,
     }
     | {
         style: 'custom',
@@ -168,29 +255,34 @@ export const EntityIds = {
     Battery: 'sensor.battery_level',
 } as const;
 
-const WHITE: RGBColor = [255, 255, 255];
 const GREEN: RGBColor = [0, 255, 80];
 const DIM_BLUE: RGBColor = [0, 20, 40];
 const AMBER: RGBColor = [255, 160, 0];
 const SKY: RGBColor = [110, 175, 255];
 
+/**
+ * Each of these overrides only what it wants to differ from the global, so the
+ * seed reads as the handful of deliberate choices it is — and a later change to
+ * the global's font or trail reaches all of them. White is the global's own
+ * colour, so the two media players name none.
+ */
 export const PANEL_ENTITIES: PanelEntity[] = [
     {
         entityId: EntityIds.Speaker,
         kind: ReadingKinds.Text,
-        display: { style: 'text', segmentId: 0, color: WHITE, speed: 80, text: '{{value}}' },
+        display: { style: 'text', segmentId: 0, text: '{{value}}', settings: { speed: 80 } },
     },
     {
         entityId: EntityIds.Television,
         kind: ReadingKinds.Text,
         // Never drawn: the default flow only ever blanks the panel on this
         // one. The display is here because every entity has one.
-        display: { style: 'text', segmentId: 0, color: WHITE, speed: 80, text: '{{value}}' },
+        display: { style: 'text', segmentId: 0, text: '{{value}}', settings: { speed: 80 } },
     },
     {
         entityId: EntityIds.Temperature,
         kind: ReadingKinds.Temperature,
-        display: { style: 'text', segmentId: 0, color: AMBER, speed: 60, text: '{{value}}' },
+        display: { style: 'text', segmentId: 0, text: '{{value}}', settings: { color: AMBER, speed: 60 } },
     },
     {
         entityId: EntityIds.Battery,
@@ -204,12 +296,12 @@ export const PANEL_ENTITIES: PanelEntity[] = [
         entityId: BuiltinIds.Time,
         kind: ReadingKinds.Text,
         format: defaultFormatFor(BuiltinIds.Time),
-        display: { style: 'text', segmentId: 0, color: SKY, speed: 60, text: '{{value}}' },
+        display: { style: 'text', segmentId: 0, text: '{{value}}', settings: { color: SKY, speed: 60 } },
     },
     {
         entityId: BuiltinIds.Date,
         kind: ReadingKinds.Text,
         format: defaultFormatFor(BuiltinIds.Date),
-        display: { style: 'text', segmentId: 0, color: SKY, speed: 60, text: '{{value}}' },
+        display: { style: 'text', segmentId: 0, text: '{{value}}', settings: { color: SKY, speed: 60 } },
     },
 ];

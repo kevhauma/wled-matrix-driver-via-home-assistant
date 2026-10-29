@@ -46,7 +46,7 @@ Then open **http://127.0.0.1:8000** to configure it.
 | [`whatToShow.ts`](whatToShow.ts) | The one decision: what belongs on the panel right now |
 | [`wled.ts`](wled.ts) | Turns that decision into one `/json/state` body, and sends it |
 | [`ledEntries.ts`](ledEntries.ts) | An icon's pixels as WLED's `i` field; `public/ledEntries.js` reads one back |
-| [`fonts.ts`](fonts.ts) | WLED 16's five text fonts, so the preview can lay text out in them |
+| [`fonts.ts`](fonts.ts) | WLED 16's five text fonts and the four rotations, so the preview can lay text out in them |
 | [`template.ts`](template.ts) | The `{{...}}` placeholders a custom display's own JSON carries |
 | [`bridge.ts`](bridge.ts) | The daemon: the tick, the queue, and applying a saved config live |
 | [`server.ts`](server.ts) | Static files out of `public/`, and six JSON endpoints |
@@ -124,9 +124,10 @@ entity be a member twice**. A media player's title, then its artist:
     "dwellSeconds": 5,
     "members": [
         { "id": "title", "entityId": "media_player.living_room",
-          "display": { "style": "text", "segmentId": 0, "color": [255, 255, 255], "speed": 80, "text": "{{title}}" } },
+          "display": { "style": "text", "segmentId": 0, "text": "{{title}}", "settings": { "speed": 80 } } },
         { "id": "artist", "entityId": "media_player.living_room",
-          "display": { "style": "text", "segmentId": 0, "color": [255, 160, 0], "speed": 80, "text": "{{artist}}" } }
+          "display": { "style": "text", "segmentId": 0, "text": "{{artist}}",
+                       "settings": { "color": [255, 160, 0], "speed": 80 } } }
     ]
 }
 ```
@@ -150,6 +151,61 @@ custom body's, below. `{{value}}` is the one that is fitted: a media player's
 `Title - Artist` is tried in the template first, then `Title` alone, before
 anything is cut at 32 characters. A reading that has dropped off draws
 nothing, not the template's own text around a gap.
+
+### How text looks
+
+Every setting WLED's Scrolling Text effect has is one of nine, and they live
+**once**, at the top of the configuration as `textSettings` — edited under
+*Text* on the Settings tab:
+
+```json
+"textSettings": {
+    "color": [255, 255, 255],
+    "gradientColor": [255, 255, 255],
+    "speed": 70,
+    "yOffset": 128,
+    "trail": 0,
+    "font": 0,
+    "rotation": "normal",
+    "gradient": false,
+    "reverse": false
+}
+```
+
+| setting | slider | what it does |
+| --- | --- | --- |
+| `color` | `col[0]` | the letters |
+| `gradientColor` | `col[2]` | the far end of the gradient, read only while `gradient` is on |
+| `speed` | `sx` | 0-255, as in the WLED UI |
+| `yOffset` | `ix` | 128 is the middle row; 0 and 255 scroll text that *fits* vertically |
+| `trail` | `c1` | `fade_out(255 - (c1 >> 4))`. 0 is none; anything else smears a scroll |
+| `font` | `c2` | 0-4, WLED 16's five built-ins (`fonts.ts`) |
+| `rotation` | `c3` | `normal`, `clockwise`, `counterClockwise`, `upsideDown` |
+| `gradient` | `o1` | `color` to `gradientColor`, and only because `pal` is pinned to 0 |
+| `reverse` | `o3` | scroll left to right rather than right to left |
+
+The one the effect has that is **not** here is `o2`, *Custom Font*: it reads a
+font file uploaded to the device, and nothing here can put one there.
+
+Each of the two styles that draw text — `'text'` and the `'iconText'` below —
+then carries a `settings` object holding **only what it sets for itself**:
+
+```json
+{ "style": "text", "segmentId": 0, "text": "{{value}}", "settings": { "speed": 80 } }
+```
+
+`{}` follows the global entirely. So changing the global font changes the font
+everywhere except the views that have taken that one setting over — which is
+what the per-setting button on the Display tab does. Taking one over copies the
+global's current value, so nothing moves on the panel until you then edit it;
+pressing the button again deletes the key and hands it back.
+
+`rotation` is stored by name rather than as a slider value because `c3` is the
+one slider on this effect that is not 0-255: WLED declares `custom3` as a
+five-bit field and reads it as `map(c3, 0, 31, -2, 2)`, so **upright is 16 and
+`c3` 0 is a half turn**. A quarter turn also swaps each glyph's width and
+height, so it changes how much text fits across the panel — `fonts.ts` and the
+preview both account for that.
 
 `PANEL_ENTITIES` in `entities.ts` is now only the **seed** for a fresh
 `panel.config.json`. Once that file exists, it is the registry.
@@ -183,11 +239,8 @@ picture with a reading beside it, painted in the editor:
     "style": "iconText",
     "pixels": ["000000", "000000", "FFC800", "...256 in all, row by row"],
     "textStart": 10,
-    "color": [230, 255, 244],
-    "speed": 128,
     "text": "{{value}}",
-    "font": 3,
-    "yOffset": 131
+    "settings": { "color": [230, 255, 244], "speed": 128, "font": 3, "yOffset": 131 }
 }
 ```
 
@@ -195,18 +248,20 @@ picture with a reading beside it, painted in the editor:
 
 - **segment 0**: the whole panel, frozen, its `i` the 256 pixels. They are
   encoded as wled-matrix-painter's "Copy as JSON" writes them (`ledEntries.ts`).
-- **segment 1**: Scrolling Text from column `textStart` to the edge, with the
-  font as `c2`, the Y offset as `ix`, no trail, and `bm: 8`, Lighten.
+- **segment 1**: Scrolling Text from column `textStart` to the edge, with
+  every slider from its resolved text settings and `bm: 8`, Lighten. Its
+  `settings` work exactly as a plain `text` view's: the same nine, over the
+  same global.
 
 Because of Lighten, the picture may run on under the text: wherever the text is
 unlit, the picture shows. `pixels` therefore covers the whole panel rather than
-only the icon's columns. `font` is 0-4, WLED 16's five fonts (`fonts.ts`), and
-the preview lays the text out in it.
+only the icon's columns.
 
 Switching a `custom` display to "icon and text" in the editor converts it. The
 body has to be shaped like a glyph: one segment with `i`, and one with a name.
-The picture is decoded from the first segment, and the text, colour, start,
-font and offset are read from the second.
+The picture is decoded from the first segment, and the text and start from the
+second — whose colour, speed, font and offset become the new view's own
+`settings`, because a body written by hand set them on purpose.
 
 ### The built-in items
 
@@ -221,7 +276,8 @@ custom body, with nothing downstream knowing the difference.
     "entityId": "builtin.time",
     "kind": "text",
     "format": "hour24",
-    "display": { "style": "text", "segmentId": 0, "color": [110, 175, 255], "speed": 60, "text": "{{value}}" }
+    "display": { "style": "text", "segmentId": 0, "text": "{{value}}",
+                 "settings": { "color": [110, 175, 255], "speed": 60 } }
 }
 ```
 
@@ -350,11 +406,18 @@ single bar is mirrored; a custom body leaves it dark.
   a display chosen by state, the sample value is the state, and the preview says
   which case it picked. An icon-and-text display adds a pixel painter: the whole
   panel, the text's columns shaded, with paint, erase, fill, pick, undo and a
-  palette. A custom display swaps the mock-up for a JSON editor and
+  palette. Either text style ends with **How this view looks**: the nine text
+  settings, each with a button saying whether it follows the global or has been
+  taken over here. A setting that follows is shown at the global's value and
+  disabled, so you can see what it gives you without taking it over. A custom
+  display swaps the mock-up for a JSON editor and
   lists what each of its segment names filled to; the shared validator's
   complaint appears as you type.
-- **Settings** — the WLED address, the brightness and the timezone: what
-  belongs to the device rather than to any one entity. **Export** downloads the
+- **Settings** — the WLED address, the brightness, the timezone and the text
+  settings every view inherits: what belongs to the device rather than to any
+  one entity. Changing one under *Text* reaches every view that has not taken
+  that setting over, which is the place to set the font or the speed for the
+  whole panel at once. **Export** downloads the
   saved configuration as `panel.config.json`, written as the service writes it,
   so a deployed one can be dropped into a dev checkout and restarted. It
   carries the WLED address, so that copy posts to the same device unless you
@@ -437,10 +500,19 @@ Configuration:
 - **An older `panel.config.json` is upgraded as it is read, and rewritten only
   by the next save.** `configUpgrade.ts` takes it one version at a time — 1 to 2
   folded a text display's `prefix` into its `text` template, 2 to 3 made a
-  loop's members objects with ids, 3 to 4 added an empty `output.timeZone` —
-  and the start-up
-  log says when it did. Until you save, the file on disk is still the old
+  loop's members objects with ids, 3 to 4 added an empty `output.timeZone`,
+  4 to 5 tagged every `byState` case with the test it makes, and 5 to 6 lifted
+  every text view's settings into one `textSettings` at the top and left each
+  view only the ones that *differ* from it — so a panel looks the same after
+  the upgrade while the views that merely repeated the old defaults now follow
+  the global. The start-up log says when it did. Until you save, the file on disk is still the old
   version, so it can be read by the old code.
+- **Version 6 is the one upgrade that changes what the device is told.** Four
+  of the nine text settings were never set by choice before it, so a plain text
+  segment inherited `SEGMENT_RESET`'s `c1: 128` — a trail that smears a
+  scrolling reading. They now go out at WLED's own defaults for the effect: no
+  trail, upright, no gradient, right to left, which is what the `iconText`
+  style always hardcoded. Everything a view actually set is preserved exactly.
 - **A display set in the flow is a copy, not a link.** It starts as the
   entity's own and then goes its own way: changing the entity's colour later
   does not reach it. "reset" goes back to following the entity. A built-in's
@@ -552,22 +624,44 @@ WLED:
   as a misspelling. A custom body writes its own names, so `{{value}}` is
   capped the same way but `{{title}}` is not: the device would cut it, and only
   the editor is in a position to warn you, which it does.
-- **Short text does not necessarily sit still, and `c2`/`ix` have to be pinned.**
-  `c2` is the font size — `map(c2, 0, 255, 0, 4)`, five built-ins, and font 0 is
-  4px wide so eight glyphs are exactly 32 columns. `ix` is the Y offset, and
-  Scrolling Text centres text that fits but at 0 or 255 scrolls it *vertically*
-  instead; 128 is the static middle. Left unset, the device uses whatever was
-  last chosen in its own UI, so `18C` could sit there crawling upwards and
-  nothing here could predict how much text was visible. Both are now sent on
-  every text segment.
+- **Short text does not necessarily sit still.** Scrolling Text centres text
+  that fits the segment, but at `ix` exactly 0 or 255 it scrolls it
+  *vertically* instead; 128 is the static middle. A `18C` left at 0 sits there
+  crawling upwards, so the preview warns about both ends of the slider.
+- **`c3` is the one slider on this effect that is not 0-255.** WLED declares
+  `custom3` as a five-bit field and `mode_2Dscrollingtext` reads it as
+  `map(c3, 0, 31, -2, 2)` — quarter turns of -2 to +2. So **upright is 16, and
+  `c3` 0 is upside down**, which is why a rotation is stored by name and sent
+  as the lowest `c3` that selects it, the way a font is. A value above 31 maps
+  far outside that range and draws at an orientation nothing names.
+- **A quarter turn changes what fits.** At ±90° WLED swaps each glyph's width
+  and height and uses a letter spacing of 1 regardless of the font, so the same
+  string needs a different number of columns. `fonts.ts` models that, which is
+  what keeps "does it scroll?" honest under a rotation.
+- **The gradient checkbox does nothing without a second colour.** `o1`
+  gradients `col[0]` to `col[2]`, and only while the palette is 0 — which this
+  project pins. Send the same colour in both slots and it is a gradient from a
+  colour to itself, so there is a `gradientColor` setting to be the far end.
+- **Trail is a fade, and 0 is the useful value.** `c1` is read as
+  `fade_out(255 - (c1 >> 4))`, so anything above 0 leaves part of the last
+  frame behind and a scrolling reading smears. WLED's own default for the
+  effect is 0; a *segment's* default `c1` is 128, which is the trap — a plain
+  text segment inherited that until the settings were named.
+- **Every one of those sliders is sent on every text segment.** Left unset the
+  device keeps whatever its own UI last had, so neither the service nor the
+  preview could say what the panel was showing. `SEGMENT_RESET` covers the rest
+  of the segment; the text settings cover these.
 - **The editor's preview is honest about being a mock-up.** The service draws
   with WLED's effects, never with pixels, so the device's glyphs cannot be
-  reproduced in a browser. Letters are drawn one to a fixed cell of the same
-  width font 0 uses, so the character count, the visible window and whether a
-  string scrolls are right; the letterforms are not. The bar is drawn across 32
+  reproduced in a browser. Both styles that draw text are laid out from
+  `fonts.ts`'s glyph widths, so where each letter sits, whether the string fits,
+  which way it scrolls and how fast are right; the letterforms are not. A
+  rotation reaches the glyph *boxes* but not the letterforms, and trail,
+  gradient and the vertical crawl are not drawn at all — the last of those
+  warns instead. The bar is drawn across 32
   columns, left to right, over the whole panel, which is what the device does. An
   icon beside text is drawn pixel for pixel, with its text over it blended as
-  Lighten and placed per `fonts.ts`'s glyph widths. For a
+  Lighten. For a
   custom body there is **no mock-up at all**, deliberately: it can draw one
   scrolling string or one bar across the whole panel, and a custom body is
   neither. It lists the filled segment names and the finished JSON instead.
@@ -686,8 +780,9 @@ Home Assistant's compressed WebSocket format:
   where one repeats; version 1 upgraded and then passing the current validator, a
   `prefix` becoming the text in front of `{{value}}`, version 3 getting the
   host's own timezone, version 4's cases saying they list states — on an
-  entity, a `show` rule and a loop member — and a current file passed through
-  untouched
+  entity, a `show` rule and a loop member — version 5's text views keeping only
+  the settings that *differ* from the new global while one that matched the old
+  defaults comes out following it, and a current file passed through untouched
 - the timezone: one instant read in Brussels and New York landing on different
   hours and dates, midnight as `00` rather than `24`, a time window deciding
   differently in each, and a misspelt zone refused by name
@@ -700,9 +795,21 @@ Home Assistant's compressed WebSocket format:
   slider while an absent one takes it, the other entities' segments still
   switched off around it, a segment it shares not being switched off under it,
   and an unavailable reading filling as empty rather than throwing
+- the text settings: every slider the effect has going out on a text segment,
+  a view with none of its own taking all nine from the global, one overriding
+  two of them keeping the global's other seven, a `false` override counting as
+  an override against a global that is `true`, and both text styles resolving
+  to the same sliders
+- the fonts and rotations: each font round-tripping through `c2` and each
+  rotation through `c3` with upright at 16 rather than 0, a quarter turn
+  swapping every glyph's width and height so the same four letters stop
+  fitting, a half turn leaving the boxes alone, each glyph centred by its own
+  height, and a `c3` past 31 clamped into range
+- the validator on settings: a misspelt override named as not a setting, and
+  one left flat on the display told where it moved to
 - an icon beside text: the solar glyph's `i` byte for byte as its hand-written
-  body had it, the text from `textStart` with the font as `c2`, `ix`, no trail
-  and Lighten, its two segments owned and the others switched off, working as
+  body had it, the text from `textStart` with its resolved sliders and
+  Lighten, its two segments owned and the others switched off, working as
   a case; three painter-written glyphs decoding and re-encoding unchanged, and
   WLED's continuation and range forms decoding; the validator refusing part of
   a panel, a `#`-prefixed colour, no room for text or picture, and font 5

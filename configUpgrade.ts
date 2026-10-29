@@ -100,11 +100,105 @@ const toVersion5 = (config: Json): Json => {
     return { ...config, version: 5, entities, flow };
 };
 
+/**
+ * Version 6 gave the configuration one set of text settings that every text
+ * view inherits, and named the sliders the effect has that nothing was setting
+ * by choice. A view now stores only its own overrides.
+ *
+ * The global takes what an older file drew: the colour and speed a text
+ * display was seeded with, and the font and Y offset `wled.ts` pinned for
+ * every plain text segment. The four it adds — trail, rotation, gradient,
+ * direction — take WLED's own defaults for the effect, which is the only step
+ * here that changes what the device is told: a plain text segment used to
+ * inherit `SEGMENT_RESET`'s `c1: 128`, a trail that smears a scrolling
+ * reading, and now gets the 0 the `iconText` style always hardcoded.
+ */
+const GLOBAL_TEXT_SETTINGS = {
+    color: [255, 255, 255],
+    gradientColor: [255, 255, 255],
+    speed: 70,
+    yOffset: 128,
+    trail: 0,
+    font: 0,
+    rotation: 'normal',
+    gradient: false,
+    reverse: false,
+};
+
+/** What each style carried flat before the settings were shared. */
+const OLD_SETTINGS: Record<string, readonly string[]> = {
+    text: ['color', 'speed'],
+    iconText: ['color', 'speed', 'font', 'yOffset'],
+};
+
+/** Enough for the shapes these settings take: numbers, strings and a colour triple. */
+const sameSetting = (one: unknown, other: unknown): boolean =>
+    JSON.stringify(one ?? null) === JSON.stringify(other ?? null);
+
+/**
+ * A text view's flat settings become a nested `settings` holding only the ones
+ * that differ from the new global, so every view still resolves to the look it
+ * had while the ones that merely repeated the old defaults now follow the
+ * global — which is the point of the version.
+ */
+const nestSettings = (display: unknown): unknown => {
+    if (!isRecord(display)) {
+        return display;
+    }
+    if (display.style === 'byState') {
+        const cases = Array.isArray(display.cases) ? display.cases.map(withNestedSettings) : display.cases;
+        const otherwise = nestSettings(display.otherwise);
+        return { ...display, cases, otherwise };
+    }
+
+    const style = typeof display.style === 'string' ? display.style : '';
+    const names = OLD_SETTINGS[style];
+    if (names === undefined) {
+        return display;
+    }
+
+    const settings: Json = {};
+    const rest = { ...display };
+    for (const name of names) {
+        const value = display[name];
+        if (value !== undefined && !sameSetting(value, GLOBAL_TEXT_SETTINGS[name as keyof typeof GLOBAL_TEXT_SETTINGS])) {
+            settings[name] = value;
+        }
+        delete rest[name];
+    }
+    return { ...rest, settings };
+};
+
+const withNestedSettings = (holder: unknown): unknown =>
+    isRecord(holder) && holder.display !== undefined
+        ? { ...holder, display: nestSettings(holder.display) }
+        : holder;
+
+const toVersion6 = (config: Json): Json => {
+    const entities = Array.isArray(config.entities)
+        ? config.entities.map(withNestedSettings)
+        : config.entities;
+    const flow = Array.isArray(config.flow)
+        ? config.flow.map(rule => {
+            if (!isRecord(rule) || !isRecord(rule.action)) {
+                return rule;
+            }
+            const action = { ...withNestedSettings(rule.action) as Json };
+            if (Array.isArray(action.members)) {
+                action.members = action.members.map(withNestedSettings);
+            }
+            return { ...rule, action };
+        })
+        : config.flow;
+    return { ...config, version: 6, textSettings: GLOBAL_TEXT_SETTINGS, entities, flow };
+};
+
 const STEPS: Record<number, (config: Json) => Json> = {
     1: toVersion2,
     2: toVersion3,
     3: toVersion4,
     4: toVersion5,
+    5: toVersion6,
 };
 
 export type Upgraded = {

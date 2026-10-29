@@ -1,10 +1,12 @@
 import { postJson, requestJson } from '/api.js';
 import { card, field, make, option, sliderField } from '/dom.js';
+import { globalTextFields, TEXT_SETTINGS_HELP } from '/textSettings.js';
 
 /**
  * What belongs to the device rather than to any one entity: where it is, how
- * bright, and what clock it keeps. It used to sit under the Display tab's
- * editor, which made it look like part of whichever entity was open.
+ * bright, what clock it keeps, and what its text looks like. It used to sit
+ * under the Display tab's editor, which made it look like part of whichever
+ * entity was open.
  */
 
 /**
@@ -147,6 +149,15 @@ export const renderSettings = (root, context) => {
             + 'checked against. Both are read on this machine, not on the WLED device.',
         '“The host’s own” uses the timezone of the machine running the service, which on '
             + 'a container or a fresh Raspberry Pi is usually UTC — pick one to be sure.',
+    ]), card('Text', [
+        make('div', { class: 'fields' }, globalTextFields(config, context.edited)),
+    ], [
+        'What every scrolling text view looks like — the plain style and the text half '
+            + 'of an icon view alike — unless that view overrides a setting for itself on '
+            + 'the Display tab.',
+        'Changing one here reaches every view that has not taken that setting over, so '
+            + 'this is the place to set the font or the speed for the whole panel at once.',
+        ...TEXT_SETTINGS_HELP,
     ]), card('Configuration', [
         make('div', { class: 'row' }, [
             make('button', {

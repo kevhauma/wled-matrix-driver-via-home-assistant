@@ -191,6 +191,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
             readings,
             states,
             brightness: panel.output.brightness,
+            textSettings: panel.textSettings,
         });
         lastPayload = payload;
         await target.send(payload);

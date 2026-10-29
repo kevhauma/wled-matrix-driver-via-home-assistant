@@ -3,18 +3,21 @@
  *
  * Honest about what it can be. The service draws text with WLED's own effects,
  * not with pixels, so the device's letters cannot be reproduced here — an
- * icon's pixels can, and are. What *is*
- * modelled is the part that bites: how many characters fit at once, and
- * therefore whether a string sits still or scrolls. Letters are drawn one to a
- * fixed cell, the same width WLED's font 0 uses, so the character count and the
- * visible window are right even though the letterforms are not.
+ * icon's pixels can, and are. What *is* modelled is the part that bites: where
+ * each letter goes. The server sends every glyph's position, width and height
+ * from `fonts.ts`, so what fits, where it sits, which way it scrolls and how
+ * fast are right even though the letterforms are not.
+ *
+ * A rotation reaches the glyph *boxes* — a quarter turn swaps each letter's
+ * width and height, which is what changes whether the string fits — but not
+ * the letterforms, which stay upright. Trail and gradient are not drawn, and
+ * neither is the vertical crawl a Y offset of exactly 0 or 255 causes; the
+ * preview warns about that one instead.
  */
 
 const COLUMNS = 32;
 const ROWS = 8;
 const SCALE = 12;
-/** Font 0 is 4px wide, which is why eight glyphs fill the panel. */
-const LETTER_COLUMNS = 4;
 
 const toCss = ([red, green, blue]) => `rgb(${red} ${green} ${blue})`;
 
@@ -56,45 +59,47 @@ export const createPanelPreview = () => {
         context.fillRect(0, 0, filled * SCALE, canvas.height);
     };
 
-    const drawText = ({ text, color, visible, speed }) => {
-        context.fillStyle = '#000';
-        context.fillRect(0, 0, canvas.width, canvas.height);
+    /**
+     * The text where `fonts.ts` says WLED puts it. `textStart` is the first
+     * column it may use — 0 for a plain text view, its own for an `iconText`
+     * one — and the caller has already set the colour, the clip and the blend
+     * mode, which is all that differs between the two.
+     */
+    const drawLayoutText = ({ layout, settings, textStart }) => {
+        const columns = COLUMNS - textStart;
+        const scrolls = layout.motion === 'across';
+        const pixelsPerFrame = 0.02 + (settings.speed / 255) * 0.12;
+        const span = layout.width + columns;
+        const travelled = (frame * pixelsPerFrame) % span;
+        /**
+         * WLED counts its scroll offset down instead of up when Reverse is
+         * set, which is the whole of what that checkbox does.
+         */
+        const offset = settings.reverse ? span - travelled : travelled;
+        // WLED centres text that fits; otherwise it enters from one edge.
+        const left = scrolls
+            ? textStart + columns - offset
+            : textStart + Math.trunc((columns - layout.width) / 2);
 
-        const cell = LETTER_COLUMNS * SCALE;
-        context.fillStyle = toCss(color);
         context.textBaseline = 'middle';
         context.textAlign = 'center';
-        context.font = `600 ${Math.round(SCALE * 5.4)}px ui-monospace, Menlo, monospace`;
-
-        const fits = text.length <= visible;
-        const middle = canvas.height / 2;
-
-        if (fits) {
-            // WLED centres anything that fits the segment; only longer strings move.
-            const width = text.length * cell;
-            const left = (canvas.width - width) / 2;
-            for (let index = 0; index < text.length; index += 1) {
-                const x = left + index * cell + cell / 2;
-                context.fillText(text[index], x, middle);
-            }
-            return;
+        for (const glyph of layout.glyphs) {
+            const x = (left + glyph.x + glyph.width / 2) * SCALE;
+            // Each glyph is centred by its own height, which under a quarter
+            // turn is its own width and so differs from letter to letter.
+            const height = Math.min(glyph.height, ROWS);
+            const middle = (glyph.top + glyph.height / 2) * SCALE;
+            context.font = `600 ${Math.round(SCALE * height * 0.95)}px ui-monospace, Menlo, monospace`;
+            context.fillText(glyph.character, x, middle, Math.max(1, glyph.width) * SCALE);
         }
+    };
 
-        const span = (text.length + visible) * cell;
-        const pixelsPerFrame = 0.3 + (speed / 255) * 1.9;
-        /**
-         * Started one cell in rather than at zero, so the first letter is
-         * already entering when the preview opens. At zero the panel sits
-         * blank for a second and reads as broken.
-         */
-        const offset = (cell + frame * pixelsPerFrame) % span;
-        for (let index = 0; index < text.length; index += 1) {
-            const x = canvas.width + index * cell + cell / 2 - offset;
-            if (x < -cell || x > canvas.width + cell) {
-                continue;
-            }
-            context.fillText(text[index], x, middle);
-        }
+    const drawText = ({ layout, settings }) => {
+        context.globalCompositeOperation = 'source-over';
+        context.fillStyle = '#000';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = toCss(settings.color);
+        drawLayoutText({ layout, settings, textStart: 0 });
     };
 
     /**
@@ -103,7 +108,7 @@ export const createPanelPreview = () => {
      * sit where `fonts.ts` says WLED puts them, though their shapes are still
      * the browser's.
      */
-    const drawIconText = ({ pixels, textStart, layout, color, speed }) => {
+    const drawIconText = ({ pixels, textStart, layout, settings }) => {
         context.globalCompositeOperation = 'source-over';
         drawGrid();
         for (let row = 0; row < ROWS; row += 1) {
@@ -117,29 +122,13 @@ export const createPanelPreview = () => {
             }
         }
 
-        const columns = COLUMNS - textStart;
-        const scrolls = layout.motion === 'across';
-        const pixelsPerFrame = 0.02 + (speed / 255) * 0.12;
-        // WLED centres text that fits; otherwise it enters from the right edge.
-        const left = scrolls
-            ? textStart + columns - ((frame * pixelsPerFrame) % (layout.width + columns))
-            : textStart + Math.trunc((columns - layout.width) / 2);
-        const visibleHeight = Math.min(layout.height, ROWS);
-
         context.save();
         context.beginPath();
-        context.rect(textStart * SCALE, 0, columns * SCALE, canvas.height);
+        context.rect(textStart * SCALE, 0, (COLUMNS - textStart) * SCALE, canvas.height);
         context.clip();
         context.globalCompositeOperation = 'lighten';
-        context.fillStyle = toCss(color);
-        context.textBaseline = 'middle';
-        context.textAlign = 'center';
-        context.font = `600 ${Math.round(SCALE * visibleHeight * 0.95)}px ui-monospace, Menlo, monospace`;
-        const middle = (layout.top + layout.height / 2) * SCALE;
-        for (const glyph of layout.glyphs) {
-            const x = (left + glyph.x + glyph.width / 2) * SCALE;
-            context.fillText(glyph.character, x, middle, Math.max(1, glyph.width) * SCALE);
-        }
+        context.fillStyle = toCss(settings.color);
+        drawLayoutText({ layout, settings, textStart });
         context.restore();
     };
 
@@ -175,10 +164,8 @@ export const createPanelPreview = () => {
         show: next => {
             current = next;
             frame = 0;
-            const needsAnimation = next !== null && (
-                next.kind === 'text' && next.text.length > next.visible
-                || next.kind === 'iconText' && next.layout.motion === 'across'
-            );
+            const drawsText = next !== null && (next.kind === 'text' || next.kind === 'iconText');
+            const needsAnimation = drawsText && next.layout.motion === 'across';
             cancelAnimationFrame(animation);
             if (needsAnimation) {
                 animation = requestAnimationFrame(loop);
