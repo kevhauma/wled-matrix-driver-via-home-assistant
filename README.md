@@ -43,6 +43,7 @@ Then open **http://127.0.0.1:8000** to configure it.
 | [`builtins.ts`](builtins.ts) | The clock and the date: the items that are not Home Assistant's |
 | [`library.ts`](library.ts) | What the entity picker is shown: filtered, ordered, and cut to a window |
 | [`readings.ts`](readings.ts) | Parses one entity's state into a percent, a temperature or text |
+| [`deviceText.ts`](deviceText.ts) | Folds text down to the ASCII the device's fonts can draw |
 | [`whatToShow.ts`](whatToShow.ts) | The one decision: what belongs on the panel right now |
 | [`wled.ts`](wled.ts) | Turns that decision into one `/json/state` body, and sends it |
 | [`ledEntries.ts`](ledEntries.ts) | An icon's pixels as WLED's `i` field; `public/ledEntries.js` reads one back |
@@ -453,7 +454,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 106 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 163 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -617,13 +618,38 @@ WLED:
   share segment 0 in the default config, and a transposed Scrolling Text comes
   out sideways. The clean segment every view starts from has them off.
 - **An empty segment name is not blank.** Scrolling Text falls back to drawing
-  the date and time, so a segment is cleared by switching it off.
-- **The segment name caps at 32 characters** (`WLED_MAX_SEGNAME_LEN`) and the
-  device's fonts are ASCII only. There is no ellipsis glyph, so a long title
-  drops the artist rather than being cut mid-word — otherwise the panel reads
-  as a misspelling. A custom body writes its own names, so `{{value}}` is
-  capped the same way but `{{title}}` is not: the device would cut it, and only
-  the editor is in a position to warn you, which it does.
+  the date and time, so a segment is cleared by switching it off. This is not
+  only a rule about clearing: *anything* that leaves the name empty draws the
+  date, which is how a Japanese media title and an unavailable sensor both used
+  to come out as today's date. `toSegment` and `toIconTextSegments` send
+  `{ id, on: false }` whenever `isRenderable` says nothing drawable survived —
+  for an icon-and-text view only the text half, so the icon still says which
+  entity it is.
+- **Non-ASCII is folded, not dropped.** The device's fonts cover printable
+  ASCII. Firmware before 16.0 copies the name through a
+  `name[i] > 31 && name[i] < 128` filter in `mode_2DScrollingText`; 16.0 keeps
+  the bytes and decodes UTF-8, but its built-in fonts still have no glyph, so
+  one draws the date and the other draws nothing.
+  [`deviceText.ts`](deviceText.ts) folds accents, the letters NFD does not
+  decompose (`ø`, `æ`, `ß`), typographic punctuation and the exotic spaces down
+  to ASCII and drops the rest, so `Café` reaches the panel as `Cafe` rather
+  than as `Caf`. Emptiness is not the test for "nothing left": `ヨルシカ - 春泥棒`
+  folds to a bare `-` and `Полюбила не того` to two spaces, both of which
+  escape WLED's own fallback while saying no more than the date did, so
+  `isRenderable` asks for a letter or a digit. The editor warns about
+  `droppedNonAscii` only when the fold had no stand-in for something, and
+  `nothingToDraw` when the segment is going to be switched off.
+  `wled-now-playing/wled/text.ts` in the sandbox holds the same table; it is
+  copied rather than shared because this project deploys from its own remote.
+- **The segment name caps at 32 characters** (`WLED_MAX_SEGNAME_LEN`), counted
+  in *bytes* — `Segment::setName` truncates with
+  `min(strlen(newName), WLED_MAX_SEGNAME_LEN)`, so a multi-byte name would be
+  cut mid-character. Folding to ASCII first is what makes the count honest.
+  There is no ellipsis glyph, so a long title drops the artist rather than
+  being cut mid-word — otherwise the panel reads as a misspelling. A custom
+  body writes its own names, so `{{value}}` is capped the same way but
+  `{{title}}` is not: the device would cut it, and only the editor is in a
+  position to warn you, which it does.
 - **Short text does not necessarily sit still.** Scrolling Text centres text
   that fits the segment, but at `ix` exactly 0 or 255 it scrolls it
   *vertically* instead; 128 is the static middle. A `18C` left at 0 sits there
@@ -737,7 +763,7 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 106 tests, no hardware and no Home Assistant:
+`deno task test` — 163 tests, no hardware and no Home Assistant:
 
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`

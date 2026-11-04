@@ -25,7 +25,8 @@ const SAMPLES = {
 };
 
 const WARNING_TEXT = {
-    strippedNonAscii: 'characters removed — the device fonts are ASCII only',
+    droppedNonAscii: 'characters dropped — accents fold to ASCII, other scripts cannot',
+    nothingToDraw: 'nothing the fonts can draw, so the segment is switched off',
     shortened: 'too long, so a shorter form was used',
     scrolls: 'longer than the panel, so it scrolls',
     scrollsVertically: 'a y offset of exactly 0 or 255 makes text that fits scroll up or down',

@@ -146,7 +146,7 @@ Deno.test('text with no form that fits is cut to the segment name limit', () => 
     assertSame(long.length <= 32, true, `fits the limit, got ${long.length}`);
 });
 
-Deno.test('non-ASCII is stripped, because the device fonts cannot draw it', () => {
+Deno.test('non-ASCII is folded, not dropped, because the device fonts are ASCII', () => {
     const entity = PANEL_ENTITIES[0];
 
     const accented = toDisplayText(resolveDisplay(entity.display, ''), {
@@ -154,7 +154,46 @@ Deno.test('non-ASCII is stripped, because the device fonts cannot draw it', () =
         candidates: ['Björk • Army'],
         isPlaying: true,
     }, NO_OTHERS);
-    assertSame(accented, 'Bjrk  Army', 'non-ASCII dropped');
+    assertSame(accented, 'Bjork * Army', 'folded to its ASCII stand-ins');
+});
+
+/**
+ * The bug this guards: `n: ''` is not a blank panel. Scrolling Text falls back
+ * to drawing the date, so a reading the fonts cannot draw used to come out as
+ * today's date — and so did a sensor that had dropped off.
+ */
+Deno.test('text with nothing drawable left switches the segment off', () => {
+    const entity = PANEL_ENTITIES.find(candidate => candidate.kind === 'text') ?? PANEL_ENTITIES[0];
+
+    const kanji = buildPayload(
+        { show: 'entity', entityId: entity.entityId },
+        { [entity.entityId]: { kind: 'text', candidates: ['春泥棒'], isPlaying: true } },
+    );
+    assertSame(firstSegment(kanji).on, false, 'a title with no ASCII at all');
+
+    const cyrillic = buildPayload(
+        { show: 'entity', entityId: entity.entityId },
+        { [entity.entityId]: { kind: 'text', candidates: ['Полюбила не того'], isPlaying: true } },
+    );
+    // This one folds to two spaces, which is not empty and so escapes WLED's
+    // own date fallback — it would have drawn a blank panel instead.
+    assertSame(firstSegment(cyrillic).on, false, 'a title that folds to whitespace');
+
+    const dropped = buildPayload(
+        { show: 'entity', entityId: entity.entityId },
+        { [entity.entityId]: { kind: 'unavailable' } },
+    );
+    assertSame(firstSegment(dropped).on, false, 'a sensor that has dropped off');
+});
+
+Deno.test('a separator surviving the fold is not enough to send', () => {
+    const entity = PANEL_ENTITIES.find(candidate => candidate.kind === 'text') ?? PANEL_ENTITIES[0];
+
+    const payload = buildPayload(
+        { show: 'entity', entityId: entity.entityId },
+        { [entity.entityId]: { kind: 'text', candidates: ['ヨルシカ - 春泥棒'], isPlaying: true } },
+    );
+    assertSame(firstSegment(payload).on, false, 'a bare dash says no more than the date did');
 });
 
 Deno.test('a bar with a non-numeric reading draws empty rather than full', () => {
@@ -598,6 +637,23 @@ Deno.test('an icon beside text switches off the other segments, and owns 0 and 1
 
     assertSame(off.join(' '), '2', 'only the other entity’s segment');
     assertSame(segmentIdsOf(solarDisplay).join(' '), '0 1', 'its own');
+});
+
+Deno.test('an icon beside text keeps the icon and darkens only the text half', () => {
+    const payload = toWledPayload({
+        decision: { show: 'entity', entityId: 'sensor.solar' },
+        entities: [{ entityId: 'sensor.solar', kind: 'text', display: solarDisplay }],
+        flowDisplays: [],
+        readings: new Map([['sensor.solar', { kind: 'unavailable' } as Reading]]),
+        states: new Map([['sensor.solar', 'unavailable']]),
+        brightness: BRIGHTNESS,
+        textSettings: GLOBAL_TEXT,
+    });
+    const segments = payload.seg as Segment[];
+
+    assertSame(segments[0].frz, true, 'the icon still says which entity this is');
+    assertSame(segments[1].on, false, 'the text half off, not named with an empty string');
+    assertSame(segments[1].n, undefined, 'so the date cannot scroll in beside the icon');
 });
 
 Deno.test('an icon beside text works as a case of a display chosen by state', () => {

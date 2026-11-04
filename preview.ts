@@ -1,4 +1,5 @@
 import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
+import { foldsWithoutLoss, isRenderable } from './deviceText.ts';
 import {
     PanelEntity,
     PlainDisplay,
@@ -34,7 +35,8 @@ import {
  */
 
 export type PreviewWarning =
-    | 'strippedNonAscii'
+    | 'droppedNonAscii'
+    | 'nothingToDraw'
     | 'shortened'
     | 'scrolls'
     | 'scrollsVertically'
@@ -265,11 +267,26 @@ export const toPreview = (
     const warnings: PreviewWarning[] = [];
     const customSegments: CustomSegmentPreview[] = [];
 
-    // The sample is not what a built-in draws, so complaining about what was
-    // typed into it would be a warning about nothing.
-    const asciiOnly = sampleValue.replace(/[^\x20-\x7e]/g, '');
-    if (!isBuiltin && asciiOnly !== sampleValue) {
-        warnings.push('strippedNonAscii');
+    /**
+     * `deviceText.ts` folds accents and typographic punctuation to ASCII, so
+     * only what it had no stand-in for is worth a warning — otherwise every
+     * `Café` would be flagged for coming out as the `Cafe` the panel wanted.
+     *
+     * The sample is not what a built-in draws, so complaining about what was
+     * typed into it would be a warning about nothing.
+     */
+    const foldedCleanly = foldsWithoutLoss(sampleValue);
+    if (!isBuiltin && !foldedCleanly) {
+        warnings.push('droppedNonAscii');
+    }
+
+    /**
+     * What `wled.ts` does with this: the segment goes out `on: false`, because
+     * an empty name makes Scrolling Text draw the date instead. A custom body
+     * writes its own names and is left alone, so it is not warned about here.
+     */
+    if (display.style !== 'custom' && !isRenderable(text)) {
+        warnings.push('nothingToDraw');
     }
 
     if (display.style === 'custom') {

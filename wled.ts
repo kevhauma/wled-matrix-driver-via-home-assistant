@@ -1,3 +1,4 @@
+import { isRenderable, toDeviceText } from './deviceText.ts';
 import {
     matchesStateCase,
     PanelEntity,
@@ -153,9 +154,6 @@ const toResetSegment = (segment: WledPayload): WledPayload => {
     return { id: segment.id, ...bounds, ...SEGMENT_RESET, ...segment, col };
 };
 
-/** WLED's own fonts are ASCII only, so anything else comes out as noise. */
-const toAscii = (text: string): string => text.replace(/[^\x20-\x7e]/g, '');
-
 /** The forms of this reading, longest first. */
 const toCandidates = (reading: Reading): readonly string[] => {
     switch (reading.kind) {
@@ -192,7 +190,7 @@ const fitText = (options: readonly string[]): string => {
 /** The reading on its own, as a custom body's `{{value}}` gets it. */
 const toPlainText = (reading: Reading): string => {
     const candidates = toCandidates(reading);
-    const options = candidates.map(toAscii);
+    const options = candidates.map(candidate => toDeviceText(candidate));
     return fitText(options);
 };
 
@@ -209,7 +207,7 @@ const toReadingValues = (reading: Reading): Omit<PlaceholderValues, 'value'> => 
     const unit = reading.kind === 'temperature' ? reading.unit : '';
     const rawTitle = reading.kind === 'text' ? reading.title ?? '' : '';
     const rawArtist = reading.kind === 'text' ? reading.artist ?? '' : '';
-    return { percent, degrees, unit, title: toAscii(rawTitle), artist: toAscii(rawArtist) };
+    return { percent, degrees, unit, title: toDeviceText(rawTitle), artist: toDeviceText(rawArtist) };
 };
 
 /** The single-segment styles this file draws itself. */
@@ -246,9 +244,9 @@ export const toTextOptions = (
     const rest = toReadingValues(reading);
     const candidates = toCandidates(reading);
     return candidates.map(candidate => {
-        const values = { ...rest, value: toAscii(candidate) };
+        const values = { ...rest, value: toDeviceText(candidate) };
         const filled = fillTemplate(display.text, values, others);
-        return toAscii(String(filled));
+        return toDeviceText(String(filled));
     });
 };
 
@@ -367,6 +365,12 @@ const toSegment = (
     }
 
     const text = toDisplayText(display, reading, others);
+    if (!isRenderable(text)) {
+        // An empty or glyphless name is not blank: Scrolling Text draws the
+        // date instead, so a view with nothing to say goes dark rather than
+        // lying about what it is showing.
+        return { ...base, on: false };
+    }
     const settings = resolveTextSettings(textSettings, display.settings);
     return {
         ...base,
@@ -386,16 +390,23 @@ const toIconTextSegments = (
 ): WledPayload[] => {
     const entries = encodeLedEntries(display.pixels);
     const text = toDisplayText(display, reading, others);
+    const icon = {
+        id: ICON_SEGMENT_ID,
+        // Frozen, so the effect never runs; 122 is what the hand-written
+        // bodies had, and nothing else has been tried on the panel.
+        frz: true,
+        fx: SCROLLING_TEXT_EFFECT_ID,
+        i: entries,
+    };
+    // The icon still says which entity this is, so only the text half goes
+    // dark — and dark rather than empty, or the date scrolls in beside it.
+    if (!isRenderable(text)) {
+        return [icon, { id: ICON_TEXT_SEGMENT_ID, on: false }];
+    }
+
     const settings = resolveTextSettings(textSettings, display.settings);
     return [
-        {
-            id: ICON_SEGMENT_ID,
-            // Frozen, so the effect never runs; 122 is what the hand-written
-            // bodies had, and nothing else has been tried on the panel.
-            frz: true,
-            fx: SCROLLING_TEXT_EFFECT_ID,
-            i: entries,
-        },
+        icon,
         {
             id: ICON_TEXT_SEGMENT_ID,
             start: display.textStart,
