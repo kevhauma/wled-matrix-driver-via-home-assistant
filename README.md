@@ -486,7 +486,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 172 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 175 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -792,11 +792,17 @@ Home Assistant's compressed WebSocket format:
 - **Message ids are per-connection** and restart at 1 on every reconnect.
 - **A dead connection does not always close.** It can sit open with nothing
   arriving; the application-level ping is the only way to notice.
-- **`auth_invalid` is fatal on purpose.** Retrying a rejected token only loops.
+- **`auth_invalid` is fatal only for a token that never worked.** Retrying a
+  bad token only loops, but one rejected after an `auth_ok` in this process is
+  a restarting Home Assistant, and that is retried like any other drop.
+- **Every way a connection can stall ends in a retry.** No snapshot within 30s
+  of connecting, an unanswered ping, or a refused `subscribe_entities` drops the
+  socket and reschedules without waiting for `onclose`, which on a dead link may
+  never fire.
 
 ## What is verified
 
-`deno task test` — 172 tests, no hardware and no Home Assistant:
+`deno task test` — 175 tests, no hardware and no Home Assistant:
 
 - a timestamp entity: a time or a date in the panel's zone, the time remaining in
   minutes rounded up and in hours from 60 of them, unavailable once passed and

@@ -23,6 +23,10 @@ export type FakeHomeAssistant = {
     dropConnection: () => void,
     /** Replaces the snapshot the next subscription will open with. */
     setSnapshot: (snapshot: CompressedStateEvent) => void,
+    /** Changes which token is accepted from the next `auth` on. */
+    setExpectedToken: (token: string) => void,
+    /** Answers the next `subscribe_entities` with a failed result. */
+    refuseNextSubscription: () => void,
     close: () => Promise<void>,
 };
 
@@ -62,6 +66,8 @@ export const startFakeHomeAssistant = (
     let liveSocket: WebSocket | undefined;
     let liveSubscriptionId: number | undefined;
     let currentSnapshot = snapshot;
+    let currentToken = expectedToken;
+    let refuseSubscription = false;
     let announceSubscribed: () => void = () => {};
     const subscribed = new Promise<void>(resolve => {
         announceSubscribed = resolve;
@@ -85,11 +91,18 @@ export const startFakeHomeAssistant = (
             const message = JSON.parse(body) as { type: string, id?: number, access_token?: string };
 
             if (message.type === 'auth') {
-                const isValid = message.access_token === expectedToken;
+                const isValid = message.access_token === currentToken;
                 const reply = isValid
                     ? { type: 'auth_ok', ha_version: '2025.10.1' }
                     : { type: 'auth_invalid', message: 'Invalid access token or password' };
                 send(socket, reply);
+                return;
+            }
+
+            if (message.type === 'subscribe_entities' && refuseSubscription) {
+                refuseSubscription = false;
+                const error = { code: 'home_assistant_error', message: 'not ready' };
+                send(socket, { id: message.id, type: 'result', success: false, error });
                 return;
             }
 
@@ -133,6 +146,14 @@ export const startFakeHomeAssistant = (
 
         setSnapshot: next => {
             currentSnapshot = next;
+        },
+
+        setExpectedToken: token => {
+            currentToken = token;
+        },
+
+        refuseNextSubscription: () => {
+            refuseSubscription = true;
         },
 
         close: async () => {

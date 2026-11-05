@@ -193,6 +193,75 @@ Deno.test('a rejected token is reported once rather than retried', async () => {
     await fake.close();
 });
 
+Deno.test('a token rejected after it had worked is retried, not fatal', async () => {
+    const fake = startFakeHomeAssistant({ snapshot: SNAPSHOT, expectedToken: TOKEN });
+    const states: string[] = [];
+    let snapshots = 0;
+    const errors: unknown[] = [];
+
+    const socket = createHomeAssistantSocket({
+        baseUrl: fake.baseUrl,
+        token: TOKEN,
+        entityIds,
+        onConnectionState: state => {
+            states.push(state);
+        },
+        onUpdate: update => {
+            if (update.isSnapshot) {
+                snapshots++;
+            }
+        },
+        onError: error => {
+            errors.push(error);
+        },
+    });
+
+    socket.start();
+    await waitFor(() => snapshots >= 1, 'the first snapshot');
+
+    // A restarting Home Assistant that turns the token away for a moment.
+    fake.setExpectedToken('not-yet');
+    fake.dropConnection();
+    await waitFor(() => states.filter(state => state === ConnectionStates.Reconnecting).length >= 2, 'a retry after the rejection');
+    fake.setExpectedToken(TOKEN);
+
+    await waitFor(() => snapshots >= 2, 'the snapshot once the token works again');
+    assertSame(errors.length, 0, 'a transient rejection is not an error');
+
+    await socket.stop();
+    await fake.close();
+});
+
+Deno.test('a refused subscription is retried rather than left hanging', async () => {
+    const fake = startFakeHomeAssistant({ snapshot: SNAPSHOT, expectedToken: TOKEN });
+    const states: string[] = [];
+    let snapshots = 0;
+
+    const socket = createHomeAssistantSocket({
+        baseUrl: fake.baseUrl,
+        token: TOKEN,
+        entityIds,
+        onConnectionState: state => {
+            states.push(state);
+        },
+        onUpdate: update => {
+            if (update.isSnapshot) {
+                snapshots++;
+            }
+        },
+        onError: () => {},
+    });
+
+    fake.refuseNextSubscription();
+    socket.start();
+    await waitFor(() => snapshots >= 1, 'the snapshot on the retry');
+
+    assertSame(states.includes(ConnectionStates.Reconnecting), true, 'retried after the refusal');
+
+    await socket.stop();
+    await fake.close();
+});
+
 /**
  * A panel of nothing but built-in items. Home Assistant reads a missing or
  * empty `entity_ids` as *every* entity, so an empty list must not be sent as a

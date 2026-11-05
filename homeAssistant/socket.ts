@@ -62,6 +62,12 @@ export type HomeAssistantSocket = {
 
 const PING_INTERVAL_MILLISECONDS = 30_000;
 const PONG_TIMEOUT_MILLISECONDS = 10_000;
+/**
+ * From opening the socket to the first snapshot. Home Assistant mid-boot can
+ * accept the connection and then say nothing, and the ping only starts after
+ * `auth_ok`, so without this a stalled handshake waits forever.
+ */
+const HANDSHAKE_TIMEOUT_MILLISECONDS = 30_000;
 const FIRST_RETRY_MILLISECONDS = 1_000;
 /**
  * How long `stop()` waits for the close handshake. On a host that is not
@@ -118,10 +124,13 @@ export const createHomeAssistantSocket = (
      * rejected token or a dropped subscription, and needs saying so.
      */
     let heardFromServer = false;
+    /** Once this token has worked, a later rejection is Home Assistant's fault, not the token's. */
+    let tokenAccepted = false;
     let retryMilliseconds = FIRST_RETRY_MILLISECONDS;
     let retryTimer: number | undefined;
     let pingTimer: number | undefined;
     let pongTimer: number | undefined;
+    let handshakeTimer: number | undefined;
 
     const send = (message: Record<string, unknown>): void => {
         const body = JSON.stringify(message);
@@ -147,6 +156,34 @@ export const createHomeAssistantSocket = (
             clearTimeout(retryTimer);
             retryTimer = undefined;
         }
+        clearTimeout(handshakeTimer);
+        handshakeTimer = undefined;
+    };
+
+    const markLive = (detail: string): void => {
+        hasSnapshot = true;
+        retryMilliseconds = FIRST_RETRY_MILLISECONDS;
+        clearTimeout(handshakeTimer);
+        handshakeTimer = undefined;
+        onConnectionState(ConnectionStates.Live, detail);
+    };
+
+    /**
+     * Gives up on the current socket without waiting for `onclose`: on a dead
+     * link the close handshake has no one to answer it, and `onclose` can be
+     * minutes away or never come, so the retry is scheduled here instead.
+     */
+    const abandon = (cause: string): void => {
+        const dead = socket;
+        clearTimers();
+        socket = undefined;
+        if (dead) {
+            dead.onclose = null;
+            dead.onmessage = null;
+            dead.close();
+        }
+        onConnectionState(ConnectionStates.Disconnected, cause);
+        scheduleReconnect();
     };
 
     /**
@@ -159,8 +196,7 @@ export const createHomeAssistantSocket = (
         const id = takeMessageId();
         send({ id, type: 'ping' });
         pongTimer = setTimeout(() => {
-            onConnectionState(ConnectionStates.Reconnecting, 'ping went unanswered');
-            socket?.close();
+            abandon('ping went unanswered');
         }, PONG_TIMEOUT_MILLISECONDS);
     };
 
@@ -172,9 +208,13 @@ export const createHomeAssistantSocket = (
         }
 
         if (message.type === 'auth_invalid') {
-            // Retrying a rejected token only loops, so this one failure is fatal.
-            stopped = true;
             const reason = message.message ?? 'token rejected';
+            if (tokenAccepted) {
+                abandon(`token rejected after it had worked, likely a restarting Home Assistant: ${reason}`);
+                return;
+            }
+            // A token that never worked will not start working, so this is fatal.
+            stopped = true;
             const error = new Error(`Home Assistant rejected HA_TOKEN: ${reason}`);
             onError(error);
             socket?.close();
@@ -182,6 +222,7 @@ export const createHomeAssistantSocket = (
         }
 
         if (message.type === 'auth_ok') {
+            tokenAccepted = true;
             const wanted = entityIds();
             pingTimer = setInterval(sendPing, PING_INTERVAL_MILLISECONDS);
 
@@ -194,9 +235,7 @@ export const createHomeAssistantSocket = (
              * the bridge it may start deciding.
              */
             if (wanted.length === 0) {
-                hasSnapshot = true;
-                retryMilliseconds = FIRST_RETRY_MILLISECONDS;
-                onConnectionState(ConnectionStates.Live, 'no Home Assistant entities on the panel');
+                markLive('no Home Assistant entities on the panel');
                 onUpdate({ lookup: store.lookup, touched: [], isSnapshot: true });
                 return;
             }
@@ -220,8 +259,7 @@ export const createHomeAssistantSocket = (
         if (message.type === 'result') {
             if (!message.success) {
                 const reason = message.error?.message ?? 'unknown error';
-                const error = new Error(`subscribe_entities was refused: ${reason}`);
-                onError(error);
+                abandon(`subscribe_entities was refused: ${reason}`);
             }
             return;
         }
@@ -230,10 +268,7 @@ export const createHomeAssistantSocket = (
             const touched = store.apply(message.event);
             const isSnapshot = !hasSnapshot;
             if (isSnapshot) {
-                hasSnapshot = true;
-                retryMilliseconds = FIRST_RETRY_MILLISECONDS;
-                const found = touched.length;
-                onConnectionState(ConnectionStates.Live, `snapshot of ${found} entities`);
+                markLive(`snapshot of ${touched.length} entities`);
             }
             onUpdate({ lookup: store.lookup, touched, isSnapshot });
         }
@@ -262,6 +297,10 @@ export const createHomeAssistantSocket = (
 
         const nextSocket = new WebSocket(socketUrl);
         socket = nextSocket;
+        handshakeTimer = setTimeout(() => {
+            const seconds = HANDSHAKE_TIMEOUT_MILLISECONDS / 1000;
+            abandon(`no snapshot within ${seconds}s of connecting`);
+        }, HANDSHAKE_TIMEOUT_MILLISECONDS);
 
         nextSocket.onmessage = rawEvent => {
             heardFromServer = true;
