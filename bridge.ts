@@ -1,10 +1,10 @@
-import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
+import { isBuiltinId } from './builtins.ts';
 import { Config } from './config.ts';
 import { displaysInFlow, LoopState } from './flow.ts';
 import { EntityLookup } from './homeAssistant/entityStore.ts';
 import { ConnectionState, ConnectionStates, createHomeAssistantSocket } from './homeAssistant/socket.ts';
 import { PanelConfig } from './panelConfig.ts';
-import { readBuiltin, Reading, readEntity } from './readings.ts';
+import { Reading, readPanelEntity } from './readings.ts';
 import { createMockSource, Source, SourceOptions } from './source.ts';
 import { createWledTarget, toWledPayload, WledPayload, WledTarget } from './wled.ts';
 import { Decision, decidePanel } from './whatToShow.ts';
@@ -118,27 +118,20 @@ export const createBridge = (options: BridgeOptions): Bridge => {
     const readAll = (): { readings: Map<string, Reading>, states: Map<string, string> } => {
         const readings = new Map<string, Reading>();
         const states = new Map<string, string>();
-        const now = toWallClock(new Date(), panel.output.timeZone);
+        const now = new Date();
+        const timeZone = panel.output.timeZone;
 
         for (const entity of panel.entities) {
-            if (isBuiltinId(entity.entityId)) {
-                /**
-                 * The format is required by the validator, so the fallback is
-                 * only reachable from a `PanelConfig` built in code. The raw
-                 * state is the rendered string, which is what an `equals`
-                 * condition on a clock compares against.
-                 */
-                const format = entity.format ?? defaultFormatFor(entity.entityId);
-                const reading = readBuiltin(format, now);
-                readings.set(entity.entityId, reading);
-                states.set(entity.entityId, reading.kind === 'text' ? reading.candidates[0] : '');
-                continue;
-            }
-
             const state = lookup(entity.entityId);
-            const reading = readEntity(state, entity.kind);
+            const reading = readPanelEntity(entity, state, now, timeZone);
             readings.set(entity.entityId, reading);
-            states.set(entity.entityId, state?.state ?? '');
+            /**
+             * A built-in's raw state is its rendered string, which is what an
+             * `equals` condition on a clock compares against.
+             */
+            const builtinState = reading.kind === 'text' ? reading.candidates[0] : '';
+            const rawState = isBuiltinId(entity.entityId) ? builtinState : state?.state ?? '';
+            states.set(entity.entityId, rawState);
         }
         return { readings, states };
     };

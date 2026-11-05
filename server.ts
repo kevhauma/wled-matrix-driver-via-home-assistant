@@ -1,5 +1,5 @@
 import { Bridge } from './bridge.ts';
-import { describeBuiltins, toWallClock } from './builtins.ts';
+import { describeBuiltins, describeDateTimeFormats, toWallClock } from './builtins.ts';
 import { Config } from './config.ts';
 import { savePanelConfig } from './configStore.ts';
 import { upgradePanelConfig } from './configUpgrade.ts';
@@ -289,12 +289,17 @@ export const startServer = (
 
         /**
          * The built-in items and their formats, with an example of each as it
-         * reads right now. Served rather than repeated in the browser code, so
-         * the editor's list of formats cannot drift from `builtins.ts`.
+         * reads right now, and the formats a `datetime` entity can take.
+         * Served rather than repeated in the browser code, so the editor's
+         * lists of formats cannot drift from `builtins.ts`.
          */
         if (url.pathname === '/api/builtins' && request.method === 'GET') {
-            const described = describeBuiltins(toWallClock(new Date(), panel().output.timeZone));
-            return jsonResponse({ items: described });
+            const now = new Date();
+            const timeZone = panel().output.timeZone;
+            const wallClock = toWallClock(now, timeZone);
+            const items = describeBuiltins(wallClock);
+            const dateTimeFormats = describeDateTimeFormats(now, timeZone);
+            return jsonResponse({ items, dateTimeFormats });
         }
 
         if (url.pathname === '/api/preview' && request.method === 'POST') {

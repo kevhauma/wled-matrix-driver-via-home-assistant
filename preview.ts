@@ -1,4 +1,4 @@
-import { defaultFormatFor, isBuiltinId, toWallClock } from './builtins.ts';
+import { isBuiltinId } from './builtins.ts';
 import { foldsWithoutLoss, isRenderable } from './deviceText.ts';
 import {
     PanelEntity,
@@ -9,7 +9,7 @@ import {
 } from './entities.ts';
 import { layoutText, TextLayout } from './fonts.ts';
 import { EntityState } from './homeAssistant/entityStore.ts';
-import { readBuiltin, readEntity, Reading } from './readings.ts';
+import { Reading, readPanelEntity } from './readings.ts';
 import {
     MAX_TEXT_LENGTH,
     PANEL_COLUMNS,
@@ -138,17 +138,9 @@ export type PreviewSample = {
  * see what changing the format does.
  */
 const previewReading = (entity: PanelEntity, sample: PreviewSample, timeZone: string): Reading => {
-    const entityId = entity.entityId;
-
-    if (isBuiltinId(entityId)) {
-        const format = entity.format ?? defaultFormatFor(entityId);
-        const now = toWallClock(new Date(), timeZone);
-        const reading = readBuiltin(format, now);
-        return reading;
-    }
-
-    const state = toEntityState(entityId, sample.value, sample.unit, sample.artist);
-    const reading = readEntity(state, entity.kind);
+    const state = toEntityState(entity.entityId, sample.value, sample.unit, sample.artist);
+    const now = new Date();
+    const reading = readPanelEntity(entity, state, now, timeZone);
     return reading;
 };
 

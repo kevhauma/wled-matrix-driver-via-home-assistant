@@ -8,7 +8,7 @@ import {
     renderBuiltin,
     toWallClock,
 } from '../builtins.ts';
-import { readBuiltin } from '../readings.ts';
+import { readPanelEntity } from '../readings.ts';
 import { toWledPayload } from '../wled.ts';
 import { DEFAULT_TEXT_SETTINGS, PanelEntity } from '../entities.ts';
 import { Reading } from '../readings.ts';
@@ -29,7 +29,8 @@ const assertSame = (actual: unknown, expected: unknown, message: string): void =
 };
 
 /** A local-time instant: Thursday 22 October 2026, 14:32:05. */
-const AFTERNOON = toWallClock(new Date(2026, 9, 22, 14, 32, 5), '');
+const AFTERNOON_INSTANT = new Date(2026, 9, 22, 14, 32, 5);
+const AFTERNOON = toWallClock(AFTERNOON_INSTANT, '');
 /** The same date at 09:07:00, for the 12-hour and padding cases. */
 const MORNING = toWallClock(new Date(2026, 9, 22, 9, 7, 0), '');
 /** Midnight, which is the hour a 12-hour clock gets wrong. */
@@ -130,8 +131,15 @@ Deno.test('the described formats carry a live example of each', () => {
     assertSame(examples, '14:32 2:32pm 14:32:05', 'the clock, in offered order');
 });
 
+const CLOCK: PanelEntity = {
+    entityId: BuiltinIds.Time,
+    kind: 'text',
+    format: 'hour24',
+    display: { style: 'text', segmentId: 0, text: 'at {{value}}', settings: { speed: 60 } },
+};
+
 Deno.test('a built-in reading is text, and never unavailable', () => {
-    const reading = readBuiltin('hour24', AFTERNOON);
+    const reading = readPanelEntity(CLOCK, undefined, AFTERNOON_INSTANT, '');
     assertSame(reading.kind, 'text', 'the kind');
     const candidates = reading.kind === 'text' ? reading.candidates.join('|') : '';
     assertSame(candidates, '14:32', 'one candidate, the rendered string');
@@ -145,19 +153,12 @@ Deno.test('a built-in reading is text, and never unavailable', () => {
  * do for a sensor.
  */
 Deno.test('a clock reaches the device as an ordinary text segment', () => {
-    const clock: PanelEntity = {
-        entityId: BuiltinIds.Time,
-        kind: 'text',
-        format: 'hour24',
-        display: { style: 'text', segmentId: 0, text: 'at {{value}}', settings: { speed: 60 } },
-    };
-    const readings = new Map<string, Reading>([
-        [BuiltinIds.Time, readBuiltin('hour24', AFTERNOON)],
-    ]);
+    const reading = readPanelEntity(CLOCK, undefined, AFTERNOON_INSTANT, '');
+    const readings = new Map<string, Reading>([[BuiltinIds.Time, reading]]);
 
     const payload = toWledPayload({
         decision: { show: 'entity', entityId: BuiltinIds.Time },
-        entities: [clock],
+        entities: [CLOCK],
         flowDisplays: [],
         states: new Map(),
         readings,

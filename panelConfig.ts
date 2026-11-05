@@ -1,4 +1,4 @@
-import { BuiltinId, formatsFor, isBuiltinId, isTimeZone } from './builtins.ts';
+import { BuiltinId, DATE_TIME_FORMATS, formatsFor, isBuiltinId, isTimeZone } from './builtins.ts';
 import { Config } from './config.ts';
 import {
     DEFAULT_TEXT_SETTINGS,
@@ -620,7 +620,7 @@ const parsePlainDisplay = (value: unknown, path: string): PlainDisplay => {
     return { style, segmentId, text, settings };
 };
 
-const READING_KINDS = ['percent', 'temperature', 'text'] as const;
+const READING_KINDS = ['percent', 'temperature', 'text', 'datetime'] as const;
 
 /**
  * A built-in item is a clock, so two of the three things an entity carries are
@@ -670,14 +670,27 @@ const parseEntity = (value: unknown, path: string): PanelEntity => {
         return builtin;
     }
 
-    // Refused rather than ignored: a format on a Home Assistant entity would
-    // be a save that quietly did nothing, which is how a typo'd id looks.
-    if (record.format !== undefined) {
-        throw fail(`${path}.format`, 'absent — only the built-in items take one', record.format);
-    }
-
     const kind = asOneOf(record.kind, `${path}.kind`, READING_KINDS);
     const display = parseDisplay(record.display, `${path}.display`);
+
+    if (kind === 'datetime') {
+        if (record.format === undefined) {
+            const list = DATE_TIME_FORMATS.join(', ');
+            throw fail(`${path}.format`, `one of ${list} for a datetime entity`, record.format);
+        }
+        const format = asOneOf(record.format, `${path}.format`, DATE_TIME_FORMATS);
+        return { entityId, kind, format, display };
+    }
+
+    // Refused rather than ignored: a format on any other entity would be a
+    // save that quietly did nothing, which is how a typo'd id looks.
+    if (record.format !== undefined) {
+        throw fail(
+            `${path}.format`,
+            'absent — only the built-in items and datetime entities take one',
+            record.format,
+        );
+    }
     return { entityId, kind, display };
 };
 

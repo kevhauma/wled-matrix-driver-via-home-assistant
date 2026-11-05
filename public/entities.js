@@ -21,6 +21,7 @@ const KIND_LABELS = {
     percent: 'percent (0-100)',
     temperature: 'temperature',
     text: 'text',
+    datetime: 'date/time (timestamp)',
 };
 
 /** Kept across re-renders, so adding one entity does not clear the search. */
@@ -32,6 +33,9 @@ const guessKind = item => {
     }
     if (item.entityId.startsWith('media_player.')) {
         return 'text';
+    }
+    if (item.deviceClass === 'timestamp') {
+        return 'datetime';
     }
     if (item.deviceClass === 'temperature') {
         return 'temperature';
@@ -49,11 +53,15 @@ const defaultDisplay = kind => {
     return { style: 'text', segmentId: 0, text: '{{value}}', settings: {} };
 };
 
-const toPanelEntity = item => {
+const toPanelEntity = (item, context) => {
     const kind = guessKind(item);
     const display = defaultDisplay(kind);
     if (item.source === 'builtin') {
         return { entityId: item.entityId, kind, format: item.format, display };
+    }
+    if (kind === 'datetime') {
+        const format = context.dateTimeFormats[0].format;
+        return { entityId: item.entityId, kind, format, display };
     }
     return { entityId: item.entityId, kind, display };
 };
@@ -81,8 +89,8 @@ const PANEL_HELP = [
     'Every entity the panel can read. Adding one here does not show it yet — the Flow '
         + 'tab decides when it appears.',
     '“Read as” is how its state is parsed: a percentage can be drawn as a bar, a '
-        + 'temperature is rounded, anything else is text. “Edit” opens how it looks on '
-        + 'the Display tab.',
+        + 'temperature is rounded, a timestamp is drawn as a time, a date or the time left '
+        + 'until it, anything else is text. “Edit” opens how it looks on the Display tab.',
     'Removing an entity the flow uses takes it out of those rules too.',
     'Changing which Home Assistant entities are listed makes the service resubscribe '
         + 'when you save; the panel keeps its old reading until the new snapshot '
@@ -145,7 +153,7 @@ const libraryCard = (context, onAdded) => {
             if (item === undefined) {
                 return;
             }
-            const entity = toPanelEntity(item);
+            const entity = toPanelEntity(item, context);
             config.entities.push(entity);
             context.setStatus(`Added ${entityId} as ${KIND_LABELS[entity.kind]}. Save to apply.`);
             /**
@@ -192,6 +200,13 @@ const kindCell = (entity, context) => {
     return make('select', {
         onChange: event => {
             entity.kind = event.target.value;
+            // Only a timestamp has a format, and the validator refuses one
+            // anywhere else.
+            if (entity.kind === 'datetime') {
+                entity.format = context.dateTimeFormats[0].format;
+            } else {
+                delete entity.format;
+            }
             // A bar needs a number, so switching to text would leave an
             // unreadable display behind. A custom body, a painted icon or a
             // choice by state is made by hand and is never replaced from

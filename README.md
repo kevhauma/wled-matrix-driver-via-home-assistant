@@ -40,7 +40,7 @@ Then open **http://127.0.0.1:8000** to configure it.
 | [`configUpgrade.ts`](configUpgrade.ts) | Brings a file written by an older version up to the current shape |
 | [`configStore.ts`](configStore.ts) | Reads that file, seeds it, writes it back atomically |
 | [`source.ts`](source.ts) | Where readings come from — the mock, or the real socket |
-| [`builtins.ts`](builtins.ts) | The clock and the date: the items that are not Home Assistant's |
+| [`builtins.ts`](builtins.ts) | The clock and the date, the items that are not Home Assistant's, and the formats a timestamp entity shares with them |
 | [`library.ts`](library.ts) | What the entity picker is shown: filtered, ordered, and cut to a window |
 | [`readings.ts`](readings.ts) | Parses one entity's state into a percent, a temperature or text |
 | [`deviceText.ts`](deviceText.ts) | Folds text down to the ASCII the device's fonts can draw |
@@ -301,7 +301,38 @@ POST a minute rather than one a second. (If you would rather the firmware did
 it, that is already reachable: a `custom` display can put WLED's own `#HHMM` in
 a segment name. Nothing here will preview it.)
 
-They are seeded into a fresh `panel.config.json` but are **not in the default
+### A timestamp entity
+
+A Home Assistant sensor with `device_class: timestamp` — a washer's finish
+time, the next alarm — is added as `kind: "datetime"` (the picker guesses it
+from the device class) and takes a `format` like a built-in: any of the time
+and date formats above, read in `output.timeZone`, or `timeRemaining`, the
+time from now until it:
+
+| remaining | drawn as |
+| --- | --- |
+| under an hour | whole minutes, rounded up: `42m`, `1m` in the last minute |
+| an hour or more | hours to one decimal: `1.0h`, `1.6h`, `26.0h` — never `1h35` |
+| none — the moment has passed | `unavailable` |
+
+Unavailable rather than `0m`, so a finish time that has passed drops out of a
+rotation and fails an `isAvailable` test instead of sitting on the panel. The
+tick redraws it each second, and the payload diff sends only when it changes.
+Only a state with an explicit offset is read (`2026-11-05T13:30:00+00:00`, as
+Home Assistant writes one): without it `Date` would guess the host's zone, so
+anything else is `unavailable` too. The flow's `above` and `below` still
+compare the raw state, which for a timestamp is not a number.
+
+```json
+{
+    "entityId": "sensor.washer_done",
+    "kind": "datetime",
+    "format": "timeRemaining",
+    "display": { "style": "text", "segmentId": 0, "text": "Wash {{value}}", "settings": {} }
+}
+```
+
+The built-in items are seeded into a fresh `panel.config.json` but are **not in the default
 flow**, which is still exactly the order that used to be hardcoded. To light the
 panel when nothing else is on, change the trailing `idle` rule from
 `{ "do": "blank" }` to `{ "do": "show", "entityId": "builtin.time" }`, or make
@@ -386,7 +417,8 @@ device and a Home Assistant instance on it.
 
 The header carries a thumbnail of the panel, drawn from the body the service
 last sent, beside the entity it is showing, that entity's raw state, and what
-it is read as — `percent`, `temperature`, `text` or `unavailable`. The flow's
+it is read as — `percent`, `temperature`, `text` or `unavailable` (a timestamp
+reads as `text`). The flow's
 tests compare the raw state; the kind is how its display parses it. While the
 panel is off it names the rule that turned it off instead. Only a single scrolling name or a
 single bar is mirrored; a custom body leaves it dark.
@@ -454,7 +486,7 @@ deno task start      # the service and the editor on http://127.0.0.1:8000
 deno task dev        # the same, but always on the mock source whatever .env says
 deno task doctor     # says which step of the connection fails, and why
 deno task entities   # lists real entity ids; takes filters, e.g. `deno task entities battery`
-deno task test       # 163 tests, no hardware; --allow-net is for the fake HA server
+deno task test       # 172 tests, no hardware; --allow-net is for the fake HA server
 deno task check
 ```
 
@@ -539,8 +571,9 @@ Configuration:
   "{{percent}}"` is refused, not honoured. Switching the other entities'
   segments off happens before there is a reading to fill the body with, so the
   ids have to be readable from the stored template.
-- **A built-in item's `format` is required, and a format on anything else is
-  refused.** Not ignored: accepting it would be a save that quietly did nothing,
+- **A built-in item's or a `datetime` entity's `format` is required, and a
+  format on anything else is refused.** A built-in cannot take
+  `timeRemaining`: it is now, so there is never any left. Not ignored: accepting it would be a save that quietly did nothing,
   which is how a typo'd entity id looks. A built-in also cannot be a `bar` — a
   bar wants a number, and a clock would leave one permanently empty with nothing
   on the panel to say why — and its `kind` can only be `text`.
@@ -763,8 +796,12 @@ Home Assistant's compressed WebSocket format:
 
 ## What is verified
 
-`deno task test` — 163 tests, no hardware and no Home Assistant:
+`deno task test` — 172 tests, no hardware and no Home Assistant:
 
+- a timestamp entity: a time or a date in the panel's zone, the time remaining in
+  minutes rounded up and in hours from 60 of them, unavailable once passed and
+  for a state with no offset; the validator requiring a format on one and
+  refusing `timeRemaining` on a built-in
 - the compressed format: merges, attribute removal, both timestamp rules, diffs
   with no snapshot behind them, removals, `clear`
 - every branch of the default flow, unchanged from when that order was

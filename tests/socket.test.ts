@@ -4,7 +4,7 @@ import { EntityLookup } from '../homeAssistant/entityStore.ts';
 import { ConnectionStates, createHomeAssistantSocket } from '../homeAssistant/socket.ts';
 import { CompressedStateEvent } from '../homeAssistant/types.ts';
 import { defaultFlow } from '../panelConfig.ts';
-import { Reading, readEntity } from '../readings.ts';
+import { Reading, readPanelEntity } from '../readings.ts';
 import { decidePanel } from '../whatToShow.ts';
 import { startFakeHomeAssistant } from './fakeHomeAssistant.ts';
 
@@ -61,9 +61,10 @@ const entityIds = () => ENTITY_IDS;
 const decideFrom = (lookup: EntityLookup) => {
     const readings = new Map<string, Reading>();
     const states = new Map<string, string>();
+    const now = new Date(0);
     for (const entity of HOME_ASSISTANT_ENTITIES) {
         const state = lookup(entity.entityId);
-        const reading = readEntity(state, entity.kind);
+        const reading = readPanelEntity(entity, state, now, '');
         readings.set(entity.entityId, reading);
         states.set(entity.entityId, state?.state ?? '');
     }

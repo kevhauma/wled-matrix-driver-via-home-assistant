@@ -1,6 +1,8 @@
 /**
  * The items the panel can show that are not Home Assistant entities: a clock
  * and a date, rendered here from the host's own clock in the panel's timezone.
+ * The same formats also render a Home Assistant timestamp — a `datetime`
+ * entity — which adds one of its own, the time remaining until it.
  *
  * They sit in the registry beside the entities and go through the same reading,
  * the same flow and the same payload, so a clock can be a rotation member, an
@@ -62,6 +64,19 @@ export type DateFormat = typeof DateFormats[keyof typeof DateFormats];
 
 export type BuiltinFormat = TimeFormat | DateFormat;
 
+/**
+ * Only a timestamp entity has this one: a built-in item *is* now, so there is
+ * never any time remaining until it.
+ */
+export const RemainingFormats = {
+    /** `42m` under an hour, `1.6h` from one — never the two together. */
+    TimeRemaining: 'timeRemaining',
+} as const;
+
+export type RemainingFormat = typeof RemainingFormats[keyof typeof RemainingFormats];
+
+export type DateTimeFormat = BuiltinFormat | RemainingFormat;
+
 /** Which formats each item accepts, and in which order the editor offers them. */
 const FORMATS: Record<BuiltinId, readonly BuiltinFormat[]> = {
     [BuiltinIds.Time]: [TimeFormats.Hour24, TimeFormats.Hour12, TimeFormats.Hour24Seconds],
@@ -77,6 +92,17 @@ export const formatsFor = (entityId: BuiltinId): readonly BuiltinFormat[] => FOR
 
 /** What a freshly added item gets, and the first entry of each list above. */
 export const defaultFormatFor = (entityId: BuiltinId): BuiltinFormat => FORMATS[entityId][0];
+
+/**
+ * What a `datetime` entity accepts, in the editor's order: the time it names,
+ * the day it names, or how long until then. The first is what a freshly added
+ * one gets.
+ */
+export const DATE_TIME_FORMATS: readonly DateTimeFormat[] = [
+    ...FORMATS[BuiltinIds.Time],
+    ...FORMATS[BuiltinIds.Date],
+    RemainingFormats.TimeRemaining,
+];
 
 /**
  * Written out rather than taken from `toLocaleString`, which would make the
@@ -219,9 +245,50 @@ export const renderBuiltin = (format: BuiltinFormat, at: WallClock): string => {
     }
 };
 
+const MILLISECONDS_PER_MINUTE = 60_000;
+
+/**
+ * Whole minutes rounded up, so the last minute reads `1m` rather than `0m`.
+ * From an hour on it is hours to one decimal, rounded from those same whole
+ * minutes, so `60m` cannot follow `1.0h` on the way down.
+ *
+ * Undefined once the moment has come: there is nothing left to count, and
+ * the reading drops out rather than sitting on `0m`.
+ */
+export const renderTimeRemaining = (milliseconds: number): string | undefined => {
+    if (milliseconds <= 0) {
+        return undefined;
+    }
+    const minutes = Math.ceil(milliseconds / MILLISECONDS_PER_MINUTE);
+    if (minutes < 60) {
+        return `${minutes}m`;
+    }
+    const hours = (minutes / 60).toFixed(1);
+    return `${hours}h`;
+};
+
+/**
+ * `target` read in one of the formats: as a wall clock in `timeZone`, or as
+ * the time from `now` until it. Undefined only for a time remaining that has
+ * run out.
+ */
+export const renderDateTime = (
+    format: DateTimeFormat,
+    target: Date,
+    now: Date,
+    timeZone: string,
+): string | undefined => {
+    if (format === RemainingFormats.TimeRemaining) {
+        const remaining = target.getTime() - now.getTime();
+        return renderTimeRemaining(remaining);
+    }
+    const wallClock = toWallClock(target, timeZone);
+    return renderBuiltin(format, wallClock);
+};
+
 /** One format, as the editor offers it: the example *is* the label. */
-export type BuiltinFormatChoice = {
-    format: BuiltinFormat,
+export type FormatChoice = {
+    format: DateTimeFormat,
     /** What this format renders to right now, e.g. `14:32`. */
     example: string,
 };
@@ -230,7 +297,7 @@ export type BuiltinDescription = {
     entityId: BuiltinId,
     /** For the entity library, where it sits beside Home Assistant's own. */
     label: string,
-    formats: BuiltinFormatChoice[],
+    formats: FormatChoice[],
 };
 
 const LABELS: Record<BuiltinId, string> = {
@@ -250,4 +317,22 @@ export const describeBuiltins = (at: WallClock): BuiltinDescription[] =>
             return { format, example };
         });
         return { entityId, label: LABELS[entityId], formats: choices };
+    });
+
+/** Two fixed durations, one either side of the hour, so the label shows both forms. */
+const REMAINING_EXAMPLES = [42 * MILLISECONDS_PER_MINUTE, 95 * MILLISECONDS_PER_MINUTE];
+
+/**
+ * A `datetime` entity's formats, for `/api/builtins` beside the items'. The
+ * clock and date examples are now, since any instant shows the format; the
+ * time remaining has no "now" to show, so it shows two fixed durations.
+ */
+export const describeDateTimeFormats = (now: Date, timeZone: string): FormatChoice[] =>
+    DATE_TIME_FORMATS.map(format => {
+        if (format === RemainingFormats.TimeRemaining) {
+            const examples = REMAINING_EXAMPLES.map(renderTimeRemaining).join(' / ');
+            return { format, example: `${examples} left` };
+        }
+        const example = renderDateTime(format, now, now, timeZone) ?? '';
+        return { format, example };
     });

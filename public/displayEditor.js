@@ -24,6 +24,18 @@ const SAMPLES = {
     text: 'Superstitious Fantasy',
 };
 
+/**
+ * A timestamp's sample is relative to now, so a countdown previews as one
+ * rather than as `unavailable` the day after this was written.
+ */
+const sampleFor = kind => {
+    if (kind === 'datetime') {
+        const inFortyTwoMinutes = Date.now() + 42 * 60_000;
+        return new Date(inFortyTwoMinutes).toISOString();
+    }
+    return SAMPLES[kind] ?? '';
+};
+
 const WARNING_TEXT = {
     droppedNonAscii: 'characters dropped — accents fold to ASCII, other scripts cannot',
     nothingToDraw: 'nothing the fonts can draw, so the segment is switched off',
@@ -390,18 +402,32 @@ const customFields = (view, context, refresh) => {
 };
 
 /**
- * Which of a built-in item's fixed formats it renders in. The choices and the
- * example beside each one come from `/api/builtins`, so they cannot drift from
- * `builtins.ts` the way the placeholder help above has to be kept in step by
- * hand.
+ * Where an entity's format choices are in the `/api/builtins` body: a
+ * built-in item's own, or the list every `datetime` entity shares. Undefined
+ * for an entity that takes no format.
+ */
+const formatChoicesIn = (body, entity) => {
+    const builtin = body.items.find(item => item.entityId === entity.entityId);
+    if (builtin !== undefined) {
+        return builtin.formats;
+    }
+    return entity.kind === 'datetime' ? body.dateTimeFormats : undefined;
+};
+
+/**
+ * Which of the fixed formats a built-in item or a timestamp renders in. The
+ * choices and the example beside each one come from `/api/builtins`, so they
+ * cannot drift from `builtins.ts` the way the placeholder help above has to be
+ * kept in step by hand.
  */
 const formatField = (entity, context) => {
-    const builtin = context.builtins.find(item => item.entityId === entity.entityId);
-    if (builtin === undefined) {
+    const known = { items: context.builtins, dateTimeFormats: context.dateTimeFormats };
+    const formats = formatChoicesIn(known, entity);
+    if (formats === undefined) {
         return null;
     }
 
-    const choices = builtin.formats.map(choice =>
+    const choices = formats.map(choice =>
         option(choice.format, choice.example, choice.format === entity.format)
     );
 
@@ -419,11 +445,11 @@ const formatField = (entity, context) => {
      * duplication `/api/builtins` exists to avoid.
      */
     void requestJson('/api/builtins').then(body => {
-        const current = body.items.find(item => item.entityId === entity.entityId);
+        const current = formatChoicesIn(body, entity);
         if (current === undefined) {
             return;
         }
-        for (const choice of current.formats) {
+        for (const choice of current) {
             const match = [...select.options].find(candidate => candidate.value === choice.format);
             if (match !== undefined) {
                 match.textContent = choice.example;
@@ -608,14 +634,16 @@ const displayFields = (view, context, refresh) => {
     };
 
     /**
-     * A built-in item is a clock, so `bar` is not offered — a bar wants a
-     * number and would draw permanently empty. `panelConfig.ts` refuses it
-     * outright, which is what covers a hand-edited file.
+     * A built-in item is a clock and a timestamp reads as one, so `bar` is
+     * not offered — a bar wants a number and would draw permanently empty.
+     * `panelConfig.ts` refuses it outright on a built-in, which is what
+     * covers a hand-edited file.
      */
     const isBuiltin = context.isBuiltin(entity.entityId);
+    const hasFormat = isBuiltin || entity.kind === 'datetime';
     const styles = [
         option('text', 'scrolling text', display.style === 'text'),
-        isBuiltin ? null : option('bar', 'bar', display.style === 'bar'),
+        hasFormat ? null : option('bar', 'bar', display.style === 'bar'),
         option('iconText', 'icon and text', display.style === 'iconText'),
         option('custom', 'custom WLED JSON', display.style === 'custom'),
         // A case cannot itself choose by state; the validator refuses it too.
@@ -639,7 +667,7 @@ const displayFields = (view, context, refresh) => {
     // The format belongs to the entity, so it is set on the entity's own
     // display and applies wherever the flow shows it.
     const isFlowDisplay = view.target !== null;
-    const format = !isBuiltin || isFlowDisplay || view.nested ? null : formatField(entity, context);
+    const format = !hasFormat || isFlowDisplay || view.nested ? null : formatField(entity, context);
 
     if (display.style === 'byState') {
         return byStateFields(view, context, refresh, [format, field('drawn as', stylePicker)]);
@@ -900,7 +928,7 @@ const previewCard = (view, context) => {
     const { entity } = view;
     const isByState = view.holder.display.style === 'byState';
     const stored = samples.get(entity.entityId);
-    const sample = stored ?? { value: SAMPLES[entity.kind] ?? '', artist: '' };
+    const sample = stored ?? { value: sampleFor(entity.kind), artist: '' };
 
     const nodes = {
         choice: make('p', { class: 'choice', hidden: true }),

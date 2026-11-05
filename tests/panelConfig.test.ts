@@ -177,6 +177,37 @@ Deno.test('a format on a Home Assistant entity is refused, not ignored', () => {
     assertSame(message.includes('only the built-in items'), true, `a stray format: ${message}`);
 });
 
+Deno.test('a datetime entity needs a format, and may count down', () => {
+    const absent = entityRefusal({ entityId: 'sensor.done', kind: 'datetime', display: TEXT_DISPLAY });
+    const nonsense = entityRefusal({
+        entityId: 'sensor.done',
+        kind: 'datetime',
+        format: 'HH:mm',
+        display: TEXT_DISPLAY,
+    });
+    const parsed = parsePanelConfig(withEntity({
+        entityId: 'sensor.done',
+        kind: 'datetime',
+        format: 'timeRemaining',
+        display: TEXT_DISPLAY,
+    }));
+
+    assertSame(absent.includes('timeRemaining'), true, `no format names the choices: ${absent}`);
+    assertSame(nonsense.includes('one of'), true, `a pattern string: ${nonsense}`);
+    assertSame(parsed.entities[0].format, 'timeRemaining', 'kept');
+});
+
+Deno.test('a built-in item cannot count down to itself', () => {
+    const message = entityRefusal({
+        entityId: 'builtin.time',
+        kind: 'text',
+        format: 'timeRemaining',
+        display: TEXT_DISPLAY,
+    });
+
+    assertSame(message.includes('config.entities[0].format'), true, `refused: ${message}`);
+});
+
 Deno.test('a built-in item reads as text and cannot be drawn as a bar', () => {
     const asPercent = entityRefusal({
         entityId: 'builtin.time',

@@ -53,6 +53,8 @@ const state = {
      * one of them: it changes what can be asked about it.
      */
     builtins: [],
+    /** The formats a `datetime` entity can take, from the same endpoint. */
+    dateTimeFormats: [],
     selectedEntityId: null,
     /**
      * Set when the Display tab is editing a display the flow sets for itself
@@ -117,6 +119,7 @@ const context = () => ({
     config: state.config,
     live: state.live,
     builtins: state.builtins,
+    dateTimeFormats: state.dateTimeFormats,
     isBuiltin: entityId => state.builtins.some(item => item.entityId === entityId),
     selectedEntityId: state.selectedEntityId,
     selectedFlowTarget: state.selectedFlowTarget,
@@ -300,6 +303,7 @@ const load = async () => {
         const config = await requestJson('/api/config');
         const builtins = await requestJson('/api/builtins');
         state.builtins = builtins.items;
+        state.dateTimeFormats = builtins.dateTimeFormats;
         state.config = config;
         state.savedJson = JSON.stringify(config);
         const first = config.entities[0];

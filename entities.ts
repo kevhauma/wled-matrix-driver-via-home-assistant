@@ -1,4 +1,4 @@
-import { BuiltinFormat, BuiltinIds, defaultFormatFor } from './builtins.ts';
+import { BuiltinIds, DateTimeFormat, defaultFormatFor } from './builtins.ts';
 import { TextFont, TextRotation } from './fonts.ts';
 
 /**
@@ -110,6 +110,11 @@ export const ReadingKinds = {
     Temperature: 'temperature',
     /** A string: a media player's title and artist, or any sensor's state. */
     Text: 'text',
+    /**
+     * An ISO timestamp with an offset, as a `device_class: timestamp` sensor
+     * reports it, drawn as text in the entity's `format`.
+     */
+    DateTime: 'datetime',
 } as const;
 
 export type ReadingKind = typeof ReadingKinds[keyof typeof ReadingKinds];
@@ -239,12 +244,13 @@ export type PanelEntity = {
     kind: ReadingKind,
     display: WledDisplay,
     /**
-     * Built-in items only, where it is required: which of that item's fixed
-     * formats it renders in. `panelConfig.ts` refuses it on a Home Assistant
-     * entity, which has nothing to do with it, and refuses its absence on a
-     * built-in — so the two invalid combinations cannot be saved or read.
+     * Built-in items and `datetime` entities only, where it is required:
+     * which of the fixed formats it renders in. `panelConfig.ts` refuses it on
+     * any other entity, which has nothing to do with it, refuses its absence
+     * where it is required, and refuses `timeRemaining` on a built-in — so the
+     * invalid combinations cannot be saved or read.
      */
-    format?: BuiltinFormat,
+    format?: DateTimeFormat,
 };
 
 /** Named so the registry and the mock data cannot drift apart. */
