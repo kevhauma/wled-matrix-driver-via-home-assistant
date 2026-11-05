@@ -1,5 +1,6 @@
 import { isBuiltinId } from './builtins.ts';
 import { Config } from './config.ts';
+import { PanelEntity, TextSettings, WledDisplay } from './entities.ts';
 import { displaysInFlow, LoopState } from './flow.ts';
 import { EntityLookup } from './homeAssistant/entityStore.ts';
 import { ConnectionState, ConnectionStates, createHomeAssistantSocket } from './homeAssistant/socket.ts';
@@ -16,6 +17,25 @@ import { Decision, decidePanel } from './whatToShow.ts';
  */
 
 const TICK_MILLISECONDS = 1_000;
+
+/**
+ * A preview holds the panel only while the editor keeps renewing it, so a
+ * closed tab or a sleeping laptop hands the panel back to the flow on its own.
+ */
+export const PREVIEW_LEASE_MILLISECONDS = 15_000;
+
+/**
+ * One view from the editor's unsaved draft, drawn from live readings instead
+ * of whatever the flow would pick. Carries the draft's entities and settings
+ * because the edit being previewed has not been saved yet.
+ */
+export type DevicePreview = {
+    entityId: string,
+    display: WledDisplay | undefined,
+    entities: readonly PanelEntity[],
+    flowDisplays: readonly WledDisplay[],
+    textSettings: TextSettings,
+};
 
 export type BridgeOptions = {
     config: Config,
@@ -35,6 +55,8 @@ export type BridgeSnapshot = {
     loops: Record<string, LoopState>,
     /** The rule that decided, so the flow editor can highlight it. */
     matchedRuleId: string | undefined,
+    /** True while the editor holds the panel, and the flow is paused. */
+    previewing: boolean,
 };
 
 export type Bridge = {
@@ -43,6 +65,8 @@ export type Bridge = {
     snapshot: () => BridgeSnapshot,
     /** Applies a saved configuration to the running service. */
     reload: (panel: PanelConfig) => void,
+    /** Shows one view in place of the flow, or hands the panel back with `undefined`. */
+    preview: (preview: DevicePreview | undefined) => void,
 };
 
 /**
@@ -83,6 +107,7 @@ export const createBridge = (options: BridgeOptions): Bridge => {
     let loops: ReadonlyMap<string, LoopState> = new Map();
     let matchedRuleId: string | undefined;
     let tick: number | undefined;
+    let preview: { value: DevicePreview, until: number } | undefined;
     /**
      * Until the first snapshot lands, `lookup` knows nothing — so deciding
      * would read every entity as unavailable and blank the panel. That matters
@@ -115,13 +140,15 @@ export const createBridge = (options: BridgeOptions): Bridge => {
 
     let target = createTarget();
 
-    const readAll = (): { readings: Map<string, Reading>, states: Map<string, string> } => {
+    const readAll = (
+        entities: readonly PanelEntity[],
+    ): { readings: Map<string, Reading>, states: Map<string, string> } => {
         const readings = new Map<string, Reading>();
         const states = new Map<string, string>();
         const now = new Date();
         const timeZone = panel.output.timeZone;
 
-        for (const entity of panel.entities) {
+        for (const entity of entities) {
             const state = lookup(entity.entityId);
             const reading = readPanelEntity(entity, state, now, timeZone);
             readings.set(entity.entityId, reading);
@@ -143,12 +170,53 @@ export const createBridge = (options: BridgeOptions): Bridge => {
      */
     let queue = Promise.resolve();
 
+    const activePreview = (): DevicePreview | undefined => {
+        if (preview !== undefined && Date.now() >= preview.until) {
+            preview = undefined;
+            onLog('preview', 'lease ran out, back to the flow');
+        }
+        return preview?.value;
+    };
+
+    /** Loops are left as they were, so the rotation resumes where it paused. */
+    const refreshPreview = async (pinned: DevicePreview): Promise<void> => {
+        const { readings, states } = readAll(pinned.entities);
+        const decision: Decision = { show: 'entity', entityId: pinned.entityId, display: pinned.display };
+        lastReadings = readings;
+        lastStates = states;
+        lastDecision = decision;
+
+        const description = `preview ${describe(decision)}`;
+        if (description !== lastDescription) {
+            lastDescription = description;
+            onLog('show', description);
+        }
+
+        const payload = toWledPayload({
+            decision,
+            entities: pinned.entities,
+            flowDisplays: pinned.flowDisplays,
+            readings,
+            states,
+            brightness: panel.output.brightness,
+            textSettings: pinned.textSettings,
+        });
+        lastPayload = payload;
+        await target.send(payload);
+    };
+
     const refresh = async (): Promise<void> => {
         if (!hasSnapshot) {
             return;
         }
 
-        const { readings, states } = readAll();
+        const pinned = activePreview();
+        if (pinned !== undefined) {
+            await refreshPreview(pinned);
+            return;
+        }
+
+        const { readings, states } = readAll(panel.entities);
         const outcome = decidePanel({
             flow: panel.flow,
             readings,
@@ -246,7 +314,16 @@ export const createBridge = (options: BridgeOptions): Bridge => {
             lastPayload,
             loops: Object.fromEntries(loops),
             matchedRuleId,
+            previewing: preview !== undefined,
         }),
+
+        preview: next => {
+            if (next === undefined && preview !== undefined) {
+                onLog('preview', 'stopped, back to the flow');
+            }
+            preview = next === undefined ? undefined : { value: next, until: Date.now() + PREVIEW_LEASE_MILLISECONDS };
+            enqueueRefresh();
+        },
 
         reload: next => {
             const before = entityIdSet(panel);

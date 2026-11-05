@@ -205,7 +205,8 @@ const describeDecision = live => {
         return [make('span', { textContent: 'off' }), make('span', { class: 'why', textContent: reason })];
     }
     const { entityId } = live.decision;
-    const ownView = live.decision.display === undefined ? '' : ' (own view)';
+    const ownView = live.previewing ? ' (preview, flow paused)'
+        : live.decision.display === undefined ? '' : ' (own view)';
     return [make('span', { class: 'mono', textContent: `${entityId}${ownView}` }), ...describeValue(live, entityId)];
 };
 

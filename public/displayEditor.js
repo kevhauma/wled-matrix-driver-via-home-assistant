@@ -115,6 +115,41 @@ const preview = createPanelPreview();
 const samples = new Map();
 
 /**
+ * Whether the panel itself is showing the view being edited, with the flow
+ * paused. Module state because the tab is rebuilt on every edit; the renewal
+ * below lets go once the Display tab is no longer on screen.
+ */
+let onDevice = false;
+let deviceBody = null;
+
+/** A third of the service's 15-second lease, so one lost request does not drop it. */
+const DEVICE_RENEW_MILLISECONDS = 5_000;
+
+const sendToDevice = () => postJson('/api/preview/device', deviceBody).catch(() => {});
+
+const releaseDevice = () => {
+    onDevice = false;
+    void requestJson('/api/preview/device', { method: 'DELETE' }).catch(() => {});
+};
+
+setInterval(() => {
+    if (!onDevice) {
+        return;
+    }
+    if (!preview.canvas.isConnected) {
+        releaseDevice();
+        return;
+    }
+    void sendToDevice();
+}, DEVICE_RENEW_MILLISECONDS);
+
+addEventListener('pagehide', () => {
+    if (onDevice) {
+        fetch('/api/preview/device', { method: 'DELETE', keepalive: true });
+    }
+});
+
+/**
  * The JSON as typed, per view, so that a keystroke that has not finished
  * being valid JSON yet is not thrown away. The draft is what the textarea
  * shows; `display.payload` only moves on when it parses.
@@ -819,15 +854,22 @@ const describeChoice = (result, sample) => {
 const refreshPreview = async (view, sample, nodes, context) => {
     const { entity } = view;
     const unit = entity.kind === 'temperature' ? 'C' : entity.kind === 'percent' ? '%' : '';
+    deviceBody = {
+        entityId: entity.entityId,
+        target: view.target,
+        flow: context.config.flow,
+        entities: context.config.entities,
+        textSettings: context.config.textSettings,
+    };
+    if (onDevice) {
+        void sendToDevice();
+    }
     try {
         const result = await postJson('/api/preview', {
-            entityId: entity.entityId,
-            target: view.target,
-            flow: context.config.flow,
+            ...deviceBody,
             sampleValue: sample.value,
             sampleArtist: sample.artist,
             unit,
-            entities: context.config.entities,
         });
 
         nodes.problem.hidden = true;
@@ -914,6 +956,10 @@ const PREVIEW_HELP = [
         + 'draw. A bar is drawn as a proportion of the 32 columns, as the device does.',
     'A custom body has no mock-up: nothing here knows which effects it asks for or how it '
         + 'divides the segments. “What gets sent” is exactly what the device receives.',
+    '“Show on the panel” pauses the flow and draws this view on the device itself, from the '
+        + 'entity’s live reading rather than the sample, unsaved edits included. Leaving this '
+        + 'tab or closing the editor hands the panel back to the flow, where a rotation picks '
+        + 'up where it paused.',
     'The sample value stands in for the entity’s state, so you can try a long title, or a '
         + 'state a display chosen by state reacts to. The built-in time and date need none: '
         + 'they read this machine’s clock, and the service redraws them as the minute turns.',
@@ -982,6 +1028,22 @@ const previewCard = (view, context) => {
         artistInput === null ? null : field('sample artist', artistInput),
     ].filter(Boolean));
 
+    const deviceToggle = make('label', { class: 'field check' }, [
+        make('input', {
+            type: 'checkbox',
+            checked: onDevice,
+            onChange: event => {
+                if (event.target.checked) {
+                    onDevice = true;
+                    void sendToDevice();
+                    return;
+                }
+                releaseDevice();
+            },
+        }),
+        make('span', { textContent: 'Show on the panel (pauses the flow)' }),
+    ]);
+
     const sent = make('details', { class: 'sent' }, [
         make('summary', { textContent: 'What gets sent' }),
         nodes.payload,
@@ -990,6 +1052,7 @@ const previewCard = (view, context) => {
     const node = card('Preview', [
         make('div', { class: 'preview' }, [
             preview.canvas,
+            deviceToggle,
             nodes.readout,
             nodes.choice,
             nodes.warnings,

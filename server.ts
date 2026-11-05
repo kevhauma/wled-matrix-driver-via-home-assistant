@@ -191,40 +191,68 @@ export const startServer = (
         return jsonResponse({ source: 'homeAssistant', ...page });
     };
 
-    const describePreview = async (request: Request): Promise<Response> => {
-        const body = await readBody(request);
-        const record = body as Record<string, unknown>;
-
-        const entityId = typeof record.entityId === 'string' ? record.entityId : '';
-        if (entityId === '') {
-            throw new RequestError(400, 'entityId is required.');
-        }
-        const sampleValue = typeof record.sampleValue === 'string' ? record.sampleValue : '';
-        const unit = typeof record.unit === 'string' ? record.unit : '';
-        const sampleArtist = typeof record.sampleArtist === 'string' ? record.sampleArtist : '';
-
-        /**
-         * Previewing against the draft the editor is holding, not the saved
-         * config, is the whole point — you need to see an edit before saving it.
-         */
-        /**
-         * A 400, not a thrown error: the editor previews keystroke by
-         * keystroke, so a draft the validator refuses is the normal case, and
-         * it does not belong in the service's log as a failure.
-         */
+    /**
+     * Previewing against the draft the editor is holding, not the saved
+     * config, is the whole point — you need to see an edit before saving it.
+     *
+     * A 400, not a thrown error: the editor previews keystroke by keystroke,
+     * so a draft the validator refuses is the normal case, and it does not
+     * belong in the service's log as a failure.
+     */
+    const parseDraft = (record: Record<string, unknown>): PanelConfig => {
         const current = panel();
-        let draft: PanelConfig;
         try {
-            draft = parsePanelConfig({
+            const draft = parsePanelConfig({
                 ...current,
                 entities: record.entities ?? current.entities,
                 flow: record.flow ?? current.flow,
                 textSettings: record.textSettings ?? current.textSettings,
             });
+            return draft;
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             throw new RequestError(400, detail);
         }
+    };
+
+    const requireEntityId = (record: Record<string, unknown>): string => {
+        const entityId = typeof record.entityId === 'string' ? record.entityId : '';
+        if (entityId === '') {
+            throw new RequestError(400, 'entityId is required.');
+        }
+        return entityId;
+    };
+
+    /** The same body as `/api/preview`, minus the samples: the device shows live readings. */
+    const previewOnDevice = async (request: Request): Promise<Response> => {
+        const body = await readBody(request);
+        const record = body as Record<string, unknown>;
+        const entityId = requireEntityId(record);
+        const draft = parseDraft(record);
+        if (!draft.entities.some(entity => entity.entityId === entityId)) {
+            throw new RequestError(400, `${entityId} is not one of the panel's entities.`);
+        }
+        const display = findFlowDisplay(draft, record.target);
+        bridge.preview({
+            entityId,
+            display,
+            entities: draft.entities,
+            flowDisplays: displaysInFlow(draft.flow),
+            textSettings: draft.textSettings,
+        });
+        return jsonResponse({ previewing: entityId });
+    };
+
+    const describePreview = async (request: Request): Promise<Response> => {
+        const body = await readBody(request);
+        const record = body as Record<string, unknown>;
+
+        const entityId = requireEntityId(record);
+        const sampleValue = typeof record.sampleValue === 'string' ? record.sampleValue : '';
+        const unit = typeof record.unit === 'string' ? record.unit : '';
+        const sampleArtist = typeof record.sampleArtist === 'string' ? record.sampleArtist : '';
+
+        const draft = parseDraft(record);
         const display = findFlowDisplay(draft, record.target);
 
         try {
@@ -305,6 +333,21 @@ export const startServer = (
         if (url.pathname === '/api/preview' && request.method === 'POST') {
             const response = await describePreview(request);
             return response;
+        }
+
+        /**
+         * Pauses the flow and draws one view on the panel itself. The lease in
+         * the bridge runs out unless the editor posts again, so the editor
+         * re-posts while it is showing; DELETE hands the panel back at once.
+         */
+        if (url.pathname === '/api/preview/device' && request.method === 'POST') {
+            const response = await previewOnDevice(request);
+            return response;
+        }
+
+        if (url.pathname === '/api/preview/device' && request.method === 'DELETE') {
+            bridge.preview(undefined);
+            return jsonResponse({ previewing: null });
         }
 
         throw new RequestError(404, `No such endpoint: ${request.method} ${url.pathname}`);
