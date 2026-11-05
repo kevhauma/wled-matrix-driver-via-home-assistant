@@ -412,6 +412,26 @@ Deno.test('an unchanged payload is not sent twice', () => {
     return run();
 });
 
+Deno.test('every drawn segment is switched to fx 0 first, so WLED restarts its effect', async () => {
+    const bodies: string[] = [];
+    const target = createWledTarget({ ip: '', onSend: body => bodies.push(body) });
+    const iconText = iconTextPayload(solarDisplay);
+    const sentSegments = (iconText.seg as Segment[]).length;
+    await target.send(iconText);
+
+    const wire = JSON.parse(bodies[0]).seg as Segment[];
+    const drawn = wire.filter(segment => segment.on !== false && segment.fx !== 0);
+    const frozen = drawn.filter(segment => segment.frz === true);
+    const scrolling = drawn.filter(segment => segment.frz !== true);
+    assertSame(frozen.length, 1, 'the icon is drawn');
+    assertSame(scrolling.length, 1, 'and so is the text');
+
+    const textAt = wire.indexOf(scrolling[0]);
+    assertSame(wire[textAt - 1].id, scrolling[0].id, 'the entry before the text is its own segment');
+    assertSame(wire[textAt - 1].fx, 0, 'switching it to fx 0');
+    assertSame(wire.length, sentSegments + 1, 'and only the text got one: a reset would black out the icon');
+});
+
 const textDisplay = (text: string): PlainDisplay =>
     ({ style: 'text', segmentId: 0, text, settings: { speed: 60 } });
 

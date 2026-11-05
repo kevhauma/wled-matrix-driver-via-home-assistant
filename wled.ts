@@ -509,8 +509,31 @@ export type WledTarget = {
 };
 
 /**
+ * WLED clears an effect's running state — Scrolling Text's position and the
+ * time of its next step — only when `fx` changes. Every text view is FX 122,
+ * so a segment can carry that state over from views ago, and on WLED 16.0.1
+ * segment 0 was seen drawing its text and never stepping it. An `fx: 0` entry
+ * first, in the same body, makes the real `fx` a change and so a reset.
+ *
+ * Not on a frozen segment: a reset blacks out the pixel buffer, which for an
+ * icon is the picture its `i` just painted.
+ */
+const withEffectResets = (payload: WledPayload): WledPayload => {
+    if (!Array.isArray(payload.seg)) {
+        return payload;
+    }
+    const segments = payload.seg as WledPayload[];
+    const seg = segments.flatMap(segment => {
+        const drawsEffect = segment.on !== false && segment.frz !== true && 'fx' in segment;
+        return drawsEffect ? [{ id: segment.id, fx: 0 }, segment] : [segment];
+    });
+    return { ...payload, seg };
+};
+
+/**
  * Sends only when the body differs from the last one, which is what keeps a
- * once-a-second decision from being once-a-second traffic.
+ * once-a-second decision from being once-a-second traffic — and what keeps the
+ * reset above from restarting a scroll that has not changed.
  */
 export const createWledTarget = (
     { ip, onSend }: { ip: string, onSend: (body: string, posted: boolean) => void },
@@ -524,22 +547,24 @@ export const createWledTarget = (
                 return undefined;
             }
             lastBody = body;
+            const resetPayload = withEffectResets(payload);
+            const wire = JSON.stringify(resetPayload);
 
             if (!ip) {
-                onSend(body, false);
+                onSend(wire, false);
                 return payload;
             }
 
             const response = await fetch(`http://${ip}/json/state`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body,
+                body: wire,
             });
             await response.body?.cancel();
             if (!response.ok) {
                 throw new Error(`WLED ${ip} rejected the state update with ${response.status}.`);
             }
-            onSend(body, true);
+            onSend(wire, true);
             return payload;
         },
     };
