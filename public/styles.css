@@ -1,18 +1,99 @@
+/*
+ * The editor as an RGB pad controller: charcoal silicone modules on a dark
+ * ground, recessed wells for anything you type into, and backlit pads for the
+ * tabs and Save. The open tab's pad colour is the accent everywhere else.
+ */
+
+@font-face {
+    font-family: 'Archivo';
+    src: url('/fonts/archivo.woff2') format('woff2');
+    font-weight: 400 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Doto';
+    src: url('/fonts/doto.woff2') format('woff2');
+    font-weight: 700 900;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Share Tech Mono';
+    src: url('/fonts/share-tech-mono.woff2') format('woff2');
+    font-display: swap;
+}
+
 :root {
-    --background: #14161a;
-    --surface: #1c1f26;
-    --surface-raised: #242833;
-    --border: #333845;
-    --text: #e8eaf0;
-    --muted: #949cad;
-    --accent: #5fb0ff;
-    --good: #4ad98c;
-    --bad: #ff6b6b;
-    --warn: #ffc14d;
+    /* The room and the plastic. */
+    --ground: #0e0e10;
+    --plate-top: #2b282d;
+    --plate-bottom: #1d1c1f;
+    --matte: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.8' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+    /* Light from above on moulded plastic: a soft sheen near the top edge, falling off downwards. */
+    --sheen: radial-gradient(120% 70px at 50% 0, rgba(255, 255, 255, 0.07), transparent);
+    /* A recessed screw head, placed at a module's corners. */
+    --screw: radial-gradient(circle at 50% 50%, #0b0b0c 0 1.8px, #5c5960 2.4px, #3a383d 3.6px, #050505 4.4px, rgba(255, 255, 255, 0.07) 5.2px, transparent 5.8px);
+    --plate: var(--matte), var(--sheen), linear-gradient(180deg, var(--plate-top), var(--plate-bottom));
+    --well: #0b0b0d;
+    --well-edge: #2c2c31;
+    --rubber-top: #333338;
+    --rubber-bottom: #26262a;
+    --groove: #000;
+
+    --text: #ececf0;
+    --muted: #a1a1aa;
+    --faint: #85858e;
+
+    /* The pads. */
+    --c-entities: #3ad7ff;
+    --c-flow: #ff4fd8;
+    --c-display: #ffd23a;
+    --c-settings: #59ff7a;
+    --c-save: #ff4a3a;
+
+    --good: #59ff7a;
+    --bad: #ff5a4a;
+    --warn: #ffc23a;
+
+    /* Overwritten below by whichever tab's pad is lit. */
+    --accent: var(--c-entities);
+    --glow: 0 0 10px color-mix(in srgb, var(--accent) 65%, transparent);
+
+    --radius-plate: 14px;
     --radius: 8px;
-    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --radius-small: 6px;
+
+    --sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --dots: 'Doto', 'Share Tech Mono', ui-monospace, monospace;
+    --mono: 'Share Tech Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+    /* A moulded edge, then the bay the module sits in: a black seam, the chassis, its lip. */
+    --plate-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.09),
+        inset 1px 0 0 rgba(255, 255, 255, 0.03),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.55),
+        0 0 0 1px #000,
+        0 0 0 4px #17161a,
+        0 0 0 5px rgba(255, 255, 255, 0.06),
+        0 18px 34px rgba(0, 0, 0, 0.6);
+    --well-shadow: inset 0 2px 4px #000, 0 0 0 1px var(--well-edge);
+    --key-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.11), 0 0 0 1px #000, 0 2px 0 #000;
+
     /* Native controls — the time inputs, selects, scrollbars — follow the page. */
     color-scheme: dark;
+}
+
+:root:has(.tabs [data-tab='flow'][aria-selected='true']) {
+    --accent: var(--c-flow);
+}
+
+:root:has(.tabs [data-tab='display'][aria-selected='true']) {
+    --accent: var(--c-display);
+}
+
+:root:has(.tabs [data-tab='settings'][aria-selected='true']) {
+    --accent: var(--c-settings);
 }
 
 * {
@@ -26,15 +107,19 @@
 
 body {
     margin: 0;
-    background: var(--background);
     color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font: 15px/1.5 var(--sans);
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.3' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .035 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
+        var(--ground);
     caret-color: var(--accent);
-    scrollbar-color: var(--border) transparent;
+    scrollbar-color: #3a3a40 var(--ground);
+    font-variant-numeric: tabular-nums;
 }
 
 ::selection {
-    background: color-mix(in srgb, var(--accent) 35%, transparent);
+    color: #fff;
+    background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 :focus-visible {
@@ -59,86 +144,124 @@ body {
     top: 0;
     /* Over a picker's list (10), under the toast (50). */
     z-index: 20;
+    display: grid;
+    /* Without this the column grows to the header's widest line on a phone. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 24px 14px;
+    background: linear-gradient(180deg, var(--ground) 75%, rgba(14, 14, 16, 0));
+}
+
+header,
+.tabs {
+    max-width: 1280px;
+    width: 100%;
+    margin: 0 auto;
+    background: var(--plate);
+    border-radius: var(--radius-plate);
+    box-shadow: var(--plate-shadow);
 }
 
 header {
     display: flex;
     align-items: center;
     gap: 20px;
-    padding: 12px 24px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    padding: 12px 14px 12px 20px;
 }
 
 h1 {
-    font-size: 16px;
     margin: 0;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font: 900 24px/1 var(--dots);
+    letter-spacing: 0.01em;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
     white-space: nowrap;
 }
 
 h2 {
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
     margin: 0;
+    font: 900 21px/1.1 var(--dots);
+    color: #fff;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
 }
 
 .live {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     margin-right: auto;
     min-width: 0;
 }
 
-/* A thumbnail of the panel: 32x8 at three pixels a LED. */
+/* The panel itself, in a well: 32x8 at seven pixels a LED. */
 .mirror {
     flex: none;
     line-height: 0;
+    padding: 4px;
+    border-radius: var(--radius-small);
+    background: #050506;
+    box-shadow: var(--well-shadow);
 }
 
 .mirror canvas {
-    width: 96px;
-    height: 24px;
+    width: 224px;
+    height: 56px;
     image-rendering: pixelated;
     background: #000;
-    border: 1px solid var(--border);
     border-radius: 3px;
 }
 
 .live-text {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 14px;
     min-width: 0;
 }
 
+/* The connection, as an indicator LED with its label beside it. */
 .badge {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
     color: var(--muted);
     white-space: nowrap;
 }
 
+.badge::before {
+    content: '';
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: radial-gradient(circle, #6a5320, #3a2e12 70%);
+    box-shadow: 0 0 0 1px #000;
+}
+
 .badge.live-on {
     color: var(--good);
-    border-color: color-mix(in srgb, var(--good) 40%, transparent);
+}
+
+.badge.live-on::before {
+    background: radial-gradient(circle, #eaffef, var(--good) 60%);
+    box-shadow: 0 0 0 1px #000, 0 0 10px var(--good);
 }
 
 .badge.live-off {
     color: var(--bad);
-    border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+}
+
+.badge.live-off::before {
+    background: radial-gradient(circle, #ffe3df, var(--bad) 60%);
+    box-shadow: 0 0 0 1px #000, 0 0 10px var(--bad);
 }
 
 .showing {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: baseline;
     min-width: 0;
     font-size: 13px;
@@ -155,89 +278,197 @@ h2 {
 }
 
 .showing .value {
-    color: var(--accent);
+    flex: none;
+    font: 800 18px/1 var(--dots);
+    color: #ffcf8a;
+    text-shadow: 0 0 8px rgba(255, 170, 50, 0.45);
 }
 
 .showing .kind {
     flex: none;
-    font-size: 11px;
-    padding: 0 6px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
     color: var(--muted);
+    background: var(--well);
+    box-shadow: var(--well-shadow);
 }
 
 .save {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
 }
 
 .dirty {
-    color: var(--warn);
-    font-size: 13px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #ff8a7e;
     white-space: nowrap;
 }
 
-/* --- buttons --- */
+/* --- buttons: rubber keys --- */
 
 button {
     font: inherit;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--text);
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 14px;
+    background: linear-gradient(180deg, var(--rubber-top), var(--rubber-bottom));
+    border: 0;
+    border-radius: var(--radius-small);
+    padding: 7px 14px;
     cursor: pointer;
-    transition: border-color 150ms, color 150ms, background-color 150ms, opacity 150ms;
+    box-shadow: var(--key-shadow);
+    transition: color 150ms, box-shadow 150ms, transform 80ms, opacity 150ms, background-color 150ms;
 }
 
 button:hover:not(:disabled) {
-    border-color: var(--accent);
+    color: #fff;
+    box-shadow: var(--key-shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px #000;
 }
 
 button:disabled {
-    opacity: 0.45;
+    opacity: 0.4;
     cursor: default;
 }
 
 button.danger:hover:not(:disabled) {
-    border-color: var(--bad);
     color: var(--bad);
+    box-shadow: var(--key-shadow), 0 0 0 1px color-mix(in srgb, var(--bad) 60%, transparent), 0 0 12px color-mix(in srgb, var(--bad) 30%, transparent);
 }
 
 button.small {
-    padding: 3px 9px;
+    padding: 4px 10px;
     font-size: 13px;
 }
 
 /* Secondary adders: present, but not competing with the content. */
 button.ghost {
     background: none;
-    border-color: transparent;
+    box-shadow: none;
     color: var(--muted);
 }
 
 button.ghost:hover:not(:disabled) {
-    border-color: transparent;
+    box-shadow: none;
     color: var(--accent);
 }
 
 button.link {
     background: none;
-    border: none;
+    box-shadow: none;
+    border-radius: 2px;
     padding: 0;
     color: var(--accent);
     text-decoration: underline;
     text-underline-offset: 3px;
 }
 
-#save:not(:disabled) {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #0b1220;
-    font-weight: 600;
+button.link:hover:not(:disabled) {
+    box-shadow: none;
+    color: #fff;
 }
+
+/* --- the pads: Save and the tabs, lit from below --- */
+
+#save,
+.tabs button {
+    --c: var(--c-save);
+    position: relative;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--c) 40%, #fff);
+    background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--c) 26%, #2a2a2e), color-mix(in srgb, var(--c) 10%, #1d1d20));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -3px 6px rgba(0, 0, 0, 0.45), 0 0 0 1px #000, 0 3px 0 #000;
+}
+
+#save {
+    width: 92px;
+    height: 54px;
+}
+
+/* Dark until there is something to save; then it glows like the rest. */
+#save:disabled {
+    opacity: 1;
+    color: #6f5a58;
+    background: radial-gradient(ellipse at 50% 40%, #2c2627, #1f1c1d);
+}
+
+#save:not(:disabled),
+.tabs button[aria-selected='true'] {
+    color: color-mix(in srgb, var(--c) 12%, #050505);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+    background: radial-gradient(ellipse at 50% 42%, #fff 0, color-mix(in srgb, var(--c) 40%, #fff) 22%, var(--c) 62%, color-mix(in srgb, var(--c) 68%, #000) 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.5),
+        0 0 0 1px #000,
+        0 0 22px color-mix(in srgb, var(--c) 65%, transparent),
+        0 0 48px color-mix(in srgb, var(--c) 25%, transparent);
+}
+
+#save:hover:not(:disabled),
+.tabs button:hover {
+    color: #fff;
+}
+
+#save:not(:disabled):hover,
+.tabs button[aria-selected='true']:hover {
+    color: color-mix(in srgb, var(--c) 12%, #050505);
+}
+
+#save:active:not(:disabled),
+.tabs button:active {
+    transform: translateY(2px);
+}
+
+.tabs {
+    display: flex;
+    gap: 12px;
+    padding: 12px 14px;
+    overflow-x: auto;
+}
+
+.tabs button {
+    flex: 0 0 132px;
+    height: 50px;
+    padding: 0 12px;
+}
+
+.tabs [data-tab='entities'] {
+    --c: var(--c-entities);
+}
+
+.tabs [data-tab='flow'] {
+    --c: var(--c-flow);
+}
+
+.tabs [data-tab='display'] {
+    --c: var(--c-display);
+}
+
+.tabs [data-tab='settings'] {
+    --c: var(--c-settings);
+}
+
+.tabs button[aria-selected='true'] {
+    transform: translateY(2px);
+}
+
+/* --- icons --- */
 
 .icon {
     width: 16px;
@@ -252,23 +483,15 @@ button.link {
 .icon-button {
     display: inline-grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     padding: 0;
     flex: none;
-    background: none;
-    border-color: transparent;
     color: var(--muted);
 }
 
 .icon-button:hover:not(:disabled) {
-    background: var(--surface-raised);
-    border-color: var(--border);
     color: var(--text);
-}
-
-.icon-button.danger:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--bad) 50%, transparent);
 }
 
 .icon-button:disabled {
@@ -282,7 +505,7 @@ button.link {
 .tools {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     flex: none;
     opacity: 0;
     transition: opacity 150ms ease-out;
@@ -304,35 +527,6 @@ button.link {
     }
 }
 
-/* --- tabs --- */
-
-.tabs {
-    display: flex;
-    gap: 4px;
-    padding: 0 24px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-}
-
-.tabs button {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: 10px 14px;
-    color: var(--muted);
-}
-
-.tabs button:hover {
-    color: var(--text);
-}
-
-.tabs button[aria-selected='true'] {
-    color: var(--text);
-    border-bottom-color: var(--accent);
-}
-
 /* --- what just happened: a toast, not a line that sits empty --- */
 
 .status {
@@ -341,32 +535,52 @@ button.link {
     left: 50%;
     bottom: 24px;
     transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
     max-width: min(560px, calc(100vw - 32px));
     margin: 0;
-    padding: 10px 16px;
+    padding: 12px 18px;
     font-size: 14px;
     color: var(--text);
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
+    background: var(--plate);
     border-radius: var(--radius);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    animation: toast-in 200ms ease-out;
+    box-shadow: var(--plate-shadow);
+    animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status::before {
+    content: '';
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: radial-gradient(circle, #fff, var(--accent) 60%);
+    box-shadow: 0 0 0 1px #000, var(--glow);
 }
 
 .status.error {
-    color: var(--bad);
-    border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+    color: #ffb4ab;
+}
+
+.status.error::before {
+    background: radial-gradient(circle, #fff, var(--bad) 60%);
+    box-shadow: 0 0 0 1px #000, 0 0 10px var(--bad);
 }
 
 .status.success {
-    color: var(--good);
-    border-color: color-mix(in srgb, var(--good) 45%, transparent);
+    color: #b8ffc6;
+}
+
+.status.success::before {
+    background: radial-gradient(circle, #fff, var(--good) 60%);
+    box-shadow: 0 0 0 1px #000, 0 0 10px var(--good);
 }
 
 @keyframes toast-in {
     from {
         opacity: 0;
-        transform: translate(-50%, 8px);
+        transform: translate(-50%, 10px);
     }
 }
 
@@ -374,20 +588,20 @@ button.link {
 
 main {
     margin: 0 auto;
-    padding: 24px 24px 96px;
+    padding: 14px 24px 96px;
     display: grid;
     /* Otherwise the one column sizes to the widest table and the page scrolls sideways. */
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    gap: 22px;
     align-items: start;
 }
 
 main.narrow {
-    max-width: 960px;
+    max-width: 1008px;
 }
 
 main.split {
-    max-width: 1280px;
+    max-width: 1328px;
 }
 
 @media (min-width: 900px) {
@@ -398,24 +612,43 @@ main.split {
     /* The preview stays in view while a long display is edited beside it. */
     main.split > :last-child {
         position: sticky;
-        top: calc(var(--top-height, 0px) + 16px);
+        top: calc(var(--top-height, 0px) + 8px);
     }
 }
 
 section.card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px 20px 20px;
+    background:
+        var(--screw) top 9px left 9px / 12px 12px no-repeat,
+        var(--screw) top 9px right 9px / 12px 12px no-repeat,
+        var(--screw) bottom 9px left 9px / 12px 12px no-repeat,
+        var(--screw) bottom 9px right 9px / 12px 12px no-repeat,
+        var(--plate);
+    border-radius: var(--radius-plate);
+    box-shadow: var(--plate-shadow);
+    padding: 20px 22px 22px;
     min-width: 0;
+}
+
+/* A section inside a module is a recess in it, not a second module on top. */
+section.card section.card {
+    background: #141416;
+    border-radius: 10px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7), 0 0 0 1px #2a2a2e;
+}
+
+/* The mould's parting line: a groove under a module's title. */
+section.card > .card-head {
+    padding-bottom: 14px;
+    border-bottom: 1px solid #000;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .card-head {
     display: flex;
     align-items: center;
-    gap: 6px;
-    min-height: 28px;
-    margin-bottom: 14px;
+    gap: 8px;
+    min-height: 30px;
+    margin-bottom: 16px;
 }
 
 /* --- help, behind the ? on each card --- */
@@ -423,34 +656,28 @@ section.card {
 .help-toggle {
     display: inline-grid;
     place-items: center;
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border-radius: 50%;
-    background: none;
-    border-color: transparent;
     color: var(--muted);
 }
 
-.help-toggle:hover:not(:disabled) {
-    border-color: transparent;
-    color: var(--accent);
-}
-
 .help-toggle[aria-expanded='true'] {
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: #111;
+    background: radial-gradient(circle at 50% 42%, #fff, var(--accent) 70%);
+    box-shadow: 0 0 0 1px #000, var(--glow);
 }
 
 .help {
     margin: -4px 0 18px;
-    padding: 12px 16px;
+    padding: 14px 16px;
     font-size: 14px;
-    line-height: 1.55;
-    color: color-mix(in srgb, var(--text) 85%, var(--accent));
-    background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    line-height: 1.6;
+    color: color-mix(in srgb, var(--text) 88%, var(--accent));
+    background: color-mix(in srgb, var(--accent) 5%, var(--well));
     border-radius: var(--radius);
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .help p {
@@ -502,29 +729,29 @@ table {
 
 th {
     text-align: left;
-    font-weight: 500;
-    color: var(--muted);
-    font-size: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 0 8px 8px;
+    color: var(--muted);
+    padding: 0 8px 10px;
     white-space: nowrap;
 }
 
 td {
-    padding: 6px 8px;
-    border-top: 1px solid var(--border);
+    padding: 7px 8px;
+    border-top: 1px solid var(--groove);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
     vertical-align: middle;
-    font-variant-numeric: tabular-nums;
 }
 
 tbody tr:hover td {
-    background: color-mix(in srgb, var(--text) 3%, transparent);
+    background: rgba(255, 255, 255, 0.025);
 }
 
 td.actions {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     align-items: center;
     justify-content: flex-end;
 }
@@ -546,10 +773,10 @@ td.unused {
 td.id,
 .mono {
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 14px;
 }
 
-/* --- form controls --- */
+/* --- form controls: wells --- */
 
 input[type='text'],
 input[type='number'],
@@ -557,48 +784,168 @@ input[type='search'],
 input[type='time'],
 select {
     font: inherit;
+    font-size: 14px;
     color: var(--text);
-    background: var(--background);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 9px;
+    background: var(--well);
+    border: 0;
+    border-radius: var(--radius-small);
+    box-shadow: var(--well-shadow);
+    padding: 7px 10px;
     width: 100%;
     min-width: 0;
-    transition: border-color 150ms;
+    transition: box-shadow 150ms;
+}
+
+/* A select is a key you press, not a well you type into. */
+select {
+    appearance: none;
+    padding-right: 30px;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%23a1a1aa' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") right 10px center no-repeat,
+        linear-gradient(180deg, var(--rubber-top), var(--rubber-bottom));
+    box-shadow: var(--key-shadow);
+    cursor: pointer;
+}
+
+select option {
+    background: #1d1d20;
+    color: var(--text);
 }
 
 input:hover,
 select:hover {
-    border-color: color-mix(in srgb, var(--border) 50%, var(--muted));
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px #45454c;
+}
+
+select:hover {
+    box-shadow: var(--key-shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 input:focus,
 select:focus {
     outline: none;
-    border-color: var(--accent);
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px var(--accent), 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-input::placeholder {
-    color: color-mix(in srgb, var(--muted) 85%, transparent);
+input::placeholder,
+textarea::placeholder {
+    color: var(--faint);
 }
 
 input[type='color'] {
-    width: 42px;
+    width: 44px;
     height: 34px;
-    padding: 2px;
-    background: var(--background);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    padding: 4px;
+    background: var(--well);
+    border: 0;
+    border-radius: var(--radius-small);
+    box-shadow: var(--well-shadow);
+    cursor: pointer;
 }
 
+input[type='color']::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+input[type='color']::-webkit-color-swatch {
+    border: 0;
+    border-radius: 3px;
+}
+
+input[type='color']::-moz-color-swatch {
+    border: 0;
+    border-radius: 3px;
+}
+
+/* A checkbox is a small pad that lights when it is on. */
+input[type='checkbox'] {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border-radius: 5px;
+    background: linear-gradient(180deg, var(--rubber-top), var(--rubber-bottom));
+    box-shadow: var(--key-shadow);
+    cursor: pointer;
+}
+
+input[type='checkbox']:checked {
+    background: radial-gradient(circle at 50% 42%, #fff, var(--accent) 65%);
+    box-shadow: 0 0 0 1px #000, var(--glow);
+}
+
+/*
+ * A slider is a row of pads that light up to its value. `--v` is set by
+ * `sliderField` as the value changes; the pads are a fixed pitch so the lit
+ * ones line up whatever the width.
+ */
 input[type='range'] {
+    --v: 50%;
+    appearance: none;
     width: 100%;
-    accent-color: var(--accent);
+    height: 22px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+    height: 16px;
+    border-radius: 4px;
+    background:
+        linear-gradient(90deg, transparent var(--v), rgba(13, 13, 15, 0.86) var(--v)),
+        repeating-linear-gradient(90deg, var(--accent) 0 14px, #000 14px 18px);
+    box-shadow: 0 0 0 1px #000;
+}
+
+input[type='range']::-moz-range-track {
+    height: 16px;
+    border-radius: 4px;
+    background:
+        linear-gradient(90deg, transparent var(--v), rgba(13, 13, 15, 0.86) var(--v)),
+        repeating-linear-gradient(90deg, var(--accent) 0 14px, #000 14px 18px);
+    box-shadow: 0 0 0 1px #000;
+}
+
+input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 10px;
+    height: 24px;
+    margin-top: -4px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fff, #c9c9cf);
+    box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+input[type='range']::-moz-range-thumb {
+    width: 10px;
+    height: 24px;
+    border: 0;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fff, #c9c9cf);
+    box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+input[type='range']:focus {
+    box-shadow: none;
+}
+
+input[type='range']:is(:active, :focus-visible)::-webkit-slider-thumb {
+    box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.6), var(--glow);
+}
+
+input[type='range']:is(:active, :focus-visible)::-moz-range-thumb {
+    box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.6), var(--glow);
+}
+
+input[type='range']:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
 }
 
 label.field {
     display: grid;
-    gap: 5px;
+    gap: 6px;
     font-size: 13px;
     color: var(--muted);
     align-content: start;
@@ -607,12 +954,13 @@ label.field {
 .field-label {
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
     gap: 8px;
 }
 
 .field-value {
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
+    font: 800 17px/1 var(--dots);
+    color: #fff;
 }
 
 .field-stack {
@@ -623,7 +971,7 @@ label.field {
 
 .fields {
     display: grid;
-    gap: 14px;
+    gap: 16px;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
@@ -634,7 +982,7 @@ label.field {
  */
 .setting {
     display: grid;
-    gap: 5px;
+    gap: 6px;
     align-content: start;
 }
 
@@ -643,15 +991,15 @@ label.field {
 }
 
 .setting.own > button {
-    border-color: var(--accent);
     color: var(--accent);
+    box-shadow: var(--key-shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 /** A checkbox reads the other way round: the box, then what it turns on. */
 label.field.check {
     grid-template-columns: auto 1fr;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     align-content: start;
 }
 
@@ -681,9 +1029,10 @@ label.field.check {
 }
 
 .divider {
-    height: 1px;
-    background: var(--border);
-    margin: 18px 0;
+    height: 2px;
+    margin: 20px 0;
+    background: var(--groove);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* --- the flow chain --- */
@@ -695,16 +1044,18 @@ label.field.check {
 }
 
 .rule {
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px 14px 14px;
-    transition: border-color 200ms;
+    background: #141416;
+    border-radius: 10px;
+    padding: 14px 16px 16px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7), 0 0 0 1px #2a2a2e;
+    transition: box-shadow 200ms;
 }
 
 .rule.matched {
-    border-color: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--accent);
+    box-shadow:
+        inset 0 2px 5px rgba(0, 0, 0, 0.7),
+        0 0 0 2px var(--accent),
+        0 0 26px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .rule-head {
@@ -712,7 +1063,7 @@ label.field.check {
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 10px;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
 }
 
 .rule-name {
@@ -723,55 +1074,81 @@ label.field.check {
 /* A rule's name reads as its title until you go to change it. */
 input.rule-label {
     background: none;
-    border-color: transparent;
-    font-weight: 600;
+    box-shadow: none;
+    font-weight: 700;
+    font-size: 16px;
     padding: 4px 8px;
     margin-left: -4px;
 }
 
 input.rule-label:hover {
-    border-color: var(--border);
+    box-shadow: 0 0 0 1px var(--well-edge);
 }
 
 input.rule-label:focus {
-    background: var(--background);
-    border-color: var(--accent);
+    background: var(--well);
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px var(--accent);
 }
 
 .keyword {
     flex: none;
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border-radius: 4px;
-    padding: 2px 7px;
+    min-width: 64px;
+    text-align: center;
+    font: 900 15px/1.2 var(--dots);
+    letter-spacing: 0.02em;
+    color: #c9c9d0;
+    background: var(--well);
+    border-radius: var(--radius-small);
+    box-shadow: inset 0 1px 3px #000;
+    padding: 4px 9px;
+}
+
+.rule.matched .keyword {
+    color: #fff;
+    text-shadow: 0 0 6px var(--accent), 0 0 12px var(--accent);
 }
 
 .matched-flag {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
     color: var(--accent);
     white-space: nowrap;
 }
 
 .matched-flag::before {
     content: '';
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: currentColor;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: radial-gradient(circle, #fff, var(--accent) 60%);
+    box-shadow: var(--glow);
 }
 
+/*
+ * A short length of LED strip between rules. Every length above the rule on
+ * the panel lights, so the strip traces the path the flow took to get there.
+ */
 .connector {
     justify-self: center;
-    width: 2px;
-    height: 16px;
-    background: var(--border);
+    width: 12px;
+    height: 30px;
+    border-radius: 2px;
+    background:
+        radial-gradient(circle, #d6d6da 2.5px, #9a9a9f 3px, transparent 3.5px) center / 12px 10px repeat-y,
+        #e9e9ec;
+    box-shadow: 0 0 0 1px #000;
+}
+
+.connector:has(~ .rule.matched) {
+    background:
+        radial-gradient(circle, #fff 1.5px, var(--accent) 3px, transparent 3.5px) center / 12px 10px repeat-y,
+        #e9e9ec;
+    box-shadow: 0 0 0 1px #000, 0 0 14px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .condition {
@@ -806,9 +1183,10 @@ input.rule-label:focus {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 10px;
-    padding-top: 12px;
-    border-top: 1px dashed var(--border);
+    margin-top: 12px;
+    padding-top: 14px;
+    border-top: 1px solid var(--groove);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     flex-wrap: wrap;
 }
 
@@ -830,27 +1208,33 @@ input.rule-label:focus {
     white-space: nowrap;
 }
 
+/* Seconds read as a number on the controller, not as a text box. */
 .inline-field input {
     width: 68px;
+    text-align: center;
+    font: 900 20px/1 var(--dots);
+    color: #ffcf8a;
+    text-shadow: 0 0 8px rgba(255, 170, 50, 0.4);
+    padding: 5px 6px;
 }
 
 .loop-members {
     display: grid;
     gap: 2px;
-    margin-top: 10px;
+    margin-top: 12px;
 }
 
 .loop-member {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 36px;
+    min-height: 38px;
     padding: 2px 6px;
-    border-radius: 6px;
+    border-radius: var(--radius-small);
 }
 
 .loop-member:hover {
-    background: color-mix(in srgb, var(--text) 4%, transparent);
+    background: rgba(255, 255, 255, 0.035);
 }
 
 .loop-member.adder {
@@ -874,13 +1258,18 @@ input.rule-label:focus {
     width: 60px;
 }
 
+/* A member's place in the turn, on a small pad. */
 .position {
     flex: none;
-    width: 18px;
-    text-align: right;
-    font-size: 12px;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    font: 900 15px/1 var(--dots);
     color: var(--muted);
-    font-variant-numeric: tabular-nums;
+    background: linear-gradient(180deg, var(--rubber-top), var(--rubber-bottom));
+    box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px #000;
 }
 
 .member-id {
@@ -892,11 +1281,11 @@ input.rule-label:focus {
 
 /* A member's own conditions, tucked under it so it reads as belonging there. */
 .member-when {
-    margin: 4px 0 8px 34px;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    background: var(--surface);
+    margin: 4px 0 8px 36px;
+    padding: 12px 14px;
+    background: var(--plate);
     border-radius: var(--radius);
+    box-shadow: var(--plate-shadow);
 }
 
 /* A display the flow sets for itself: always shown, and how you open it. */
@@ -906,13 +1295,14 @@ input.rule-label:focus {
     gap: 6px;
     min-width: 0;
     max-width: 240px;
-    padding: 2px 8px;
+    padding: 3px 10px;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 400;
     color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--well));
+    border-radius: var(--radius-small);
+    box-shadow: inset 0 1px 3px #000, 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .view-badge span {
@@ -928,7 +1318,8 @@ input.rule-label:focus {
 }
 
 .view-badge:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: #fff;
+    box-shadow: inset 0 1px 3px #000, 0 0 0 1px var(--accent), var(--glow);
 }
 
 /* --- the Display tab --- */
@@ -952,12 +1343,12 @@ input.rule-label:focus {
 }
 
 .chip {
-    padding: 2px 9px;
+    padding: 3px 9px;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 400;
     color: var(--text);
-    background: var(--background);
-    border-radius: 999px;
+    border-radius: 5px;
 }
 
 .chip:hover:not(:disabled) {
@@ -965,11 +1356,11 @@ input.rule-label:focus {
 }
 
 .state-case {
-    border: 1px solid var(--border);
+    background: #141416;
     border-radius: 10px;
-    padding: 12px;
+    padding: 14px;
     margin-bottom: 10px;
-    background: var(--surface-raised);
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7), 0 0 0 1px #2a2a2e;
 }
 
 .state-case .rule-head {
@@ -982,11 +1373,11 @@ input.rule-label:focus {
     font-size: 13px;
 }
 
-/* --- the panel preview --- */
+/* --- the panel preview, behind its diffuser --- */
 
 .preview {
     display: grid;
-    gap: 12px;
+    gap: 14px;
 }
 
 canvas.panel {
@@ -994,12 +1385,15 @@ canvas.panel {
     max-width: 512px;
     image-rendering: pixelated;
     background: #000;
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
+    padding: 6px;
+    background-clip: content-box;
+    box-shadow: var(--well-shadow), inset 0 0 0 6px #050506;
 }
 
 .readout {
-    font-variant-numeric: tabular-nums;
+    font-family: var(--mono);
+    color: var(--muted);
 }
 
 .warnings {
@@ -1013,17 +1407,32 @@ canvas.panel {
 }
 
 .warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 4px 10px 4px 8px;
     font-size: 12px;
     color: var(--warn);
-    border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
-    border-radius: 999px;
-    padding: 2px 9px;
-    margin: 0;
+    background: var(--well);
+    border-radius: var(--radius-small);
+    box-shadow: inset 0 1px 3px #000, 0 0 0 1px color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.warning::before {
+    content: '';
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--warn);
+    box-shadow: 0 0 8px var(--warn);
 }
 
 details.sent {
-    border-top: 1px solid var(--border);
-    padding-top: 12px;
+    padding-top: 14px;
+    border-top: 1px solid var(--groove);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 details.sent summary {
@@ -1045,16 +1454,16 @@ pre.payload {
     margin: 0;
     max-height: 420px;
     overflow: auto;
-    padding: 12px;
-    background: var(--background);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    padding: 12px 14px;
+    background: var(--well);
+    border-radius: var(--radius-small);
+    box-shadow: var(--well-shadow);
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-all;
-    color: var(--muted);
+    color: #9fe9c8;
 }
 
 /* --- a custom display's JSON --- */
@@ -1067,20 +1476,21 @@ pre.payload {
 textarea.json {
     width: 100%;
     resize: vertical;
-    padding: 10px 12px;
-    background: var(--background);
+    padding: 12px 14px;
+    background: var(--well);
     color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border: 0;
+    border-radius: var(--radius-small);
+    box-shadow: var(--well-shadow);
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
     tab-size: 2;
 }
 
 textarea.json:focus {
     outline: none;
-    border-color: var(--accent);
+    box-shadow: inset 0 2px 4px #000, 0 0 0 1px var(--accent);
 }
 
 /* --- the entity picker, shared by every tab --- */
@@ -1099,7 +1509,7 @@ textarea.json:focus {
 .picker-list {
     position: absolute;
     z-index: 10;
-    top: calc(100% + 4px);
+    top: calc(100% + 6px);
     left: 0;
     /* Entity ids are long and the field can be narrow, so the list is allowed
        to be wider than the field it belongs to. */
@@ -1108,28 +1518,25 @@ textarea.json:focus {
     max-width: min(560px, 90vw);
     max-height: 320px;
     overflow-y: auto;
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+    padding: 4px;
+    background: var(--plate);
+    border-radius: var(--radius);
+    box-shadow: var(--plate-shadow), 0 20px 40px rgba(0, 0, 0, 0.6);
 }
 
 .picker-row {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    padding: 7px 10px;
+    padding: 8px 10px;
     cursor: pointer;
-    border-bottom: 1px solid var(--border);
+    border-radius: 5px;
     white-space: nowrap;
 }
 
-.picker-row:last-child {
-    border-bottom: none;
-}
-
 .picker-row.on {
-    background: #2e3444;
+    background: color-mix(in srgb, var(--accent) 14%, #141416);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .picker-row.taken {
@@ -1139,7 +1546,7 @@ textarea.json:focus {
 
 .picker-id {
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 14px;
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1157,13 +1564,15 @@ textarea.json:focus {
 
 .picker-badge {
     flex: none;
-    font-size: 11px;
+    font-size: 10px;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.1em;
     color: var(--accent);
-    border: 1px solid var(--border);
+    background: var(--well);
     border-radius: 4px;
-    padding: 1px 5px;
+    padding: 2px 6px;
+    box-shadow: inset 0 1px 2px #000;
 }
 
 .picker-taken {
@@ -1180,16 +1589,71 @@ textarea.json:focus {
 }
 
 .picker-note {
-    border-top: 1px solid var(--border);
+    margin-top: 4px;
+    border-top: 1px solid var(--groove);
+}
+
+/* --- the icon painter --- */
+
+.painter {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+    outline: none;
+}
+
+canvas.painter-grid {
+    width: 100%;
+    max-width: 512px;
+    aspect-ratio: 4 / 1;
+    border-radius: 6px;
+    box-shadow: var(--well-shadow);
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.painter-tools button.active {
+    color: #111;
+    background: radial-gradient(ellipse at 50% 42%, #fff, var(--accent) 70%);
+    box-shadow: 0 0 0 1px #000, var(--glow);
+}
+
+.painter-tools input[type='color'] {
+    width: 38px;
+    height: 30px;
+    padding: 3px;
+}
+
+.swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+button.swatch {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 5px;
+    box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.35), 0 0 0 1px #000;
 }
 
 /* --- small screens --- */
 
 @media (max-width: 700px) {
+    .top {
+        padding: 8px 10px 10px;
+        gap: 8px;
+    }
+
     header {
         flex-wrap: wrap;
-        gap: 10px 16px;
-        padding: 10px 16px;
+        gap: 10px 14px;
+        padding: 10px 10px 10px 14px;
+    }
+
+    h1 {
+        font-size: 20px;
     }
 
     /* The panel's state gets the whole second line. */
@@ -1199,24 +1663,59 @@ textarea.json:focus {
         margin-right: 0;
     }
 
+    .mirror canvas {
+        width: 160px;
+        height: 40px;
+    }
+
+    .live-text {
+        flex-wrap: wrap;
+        gap: 4px 12px;
+    }
+
     .save {
         margin-left: auto;
+    }
+
+    #save {
+        width: 76px;
+        height: 44px;
     }
 
     .showing .why {
         display: none;
     }
 
+    /* The id gets its own line above the value, so neither gives way. */
+    .showing {
+        flex-wrap: wrap;
+        row-gap: 2px;
+    }
+
+    .showing .id {
+        flex-basis: 100%;
+    }
+
     .tabs {
-        padding: 0 8px;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .tabs button {
+        flex: 1 0 74px;
+        height: 42px;
+        padding: 0 6px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
     }
 
     main {
-        padding: 16px 16px 96px;
+        padding: 8px 10px 96px;
     }
 
+    /* The heading clears the row of corner screws. */
     section.card {
-        padding: 14px 14px 16px;
+        padding: 24px 14px 20px;
     }
 
     /* Four columns do not fit a phone: the entity takes a line of its own. */
@@ -1288,11 +1787,13 @@ textarea.json:focus {
         gap: 6px 12px;
         align-items: center;
         padding: 10px 8px;
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--groove);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
     }
 
     .table-scroll td {
         border: none;
+        box-shadow: none;
         padding: 0;
     }
 
@@ -1311,43 +1812,11 @@ textarea.json:focus {
     }
 }
 
-.painter {
-    display: grid;
-    gap: 10px;
-    margin-bottom: 16px;
-    outline: none;
-}
-
-canvas.painter-grid {
-    width: 100%;
-    max-width: 512px;
-    aspect-ratio: 4 / 1;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    cursor: crosshair;
-    touch-action: none;
-}
-
-.painter-tools button.active {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
-.painter-tools input[type='color'] {
-    width: 36px;
-    height: 28px;
-    padding: 0;
-}
-
-.swatches {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-
-button.swatch {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border-radius: 4px;
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition: none !important;
+        animation: none !important;
+    }
 }

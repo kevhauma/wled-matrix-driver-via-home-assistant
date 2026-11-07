@@ -34,6 +34,7 @@ const MIME_TYPES: Record<string, string> = {
     '.css': 'text/css; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
     '.svg': 'image/svg+xml',
+    '.woff2': 'font/woff2',
 };
 
 class RequestError extends Error {

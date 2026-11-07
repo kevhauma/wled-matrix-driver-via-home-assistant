@@ -18,6 +18,8 @@
 const COLUMNS = 32;
 const ROWS = 8;
 const SCALE = 12;
+/** An LED that is off: dark, but not the black of the diffuser walls. */
+const UNLIT = '#18181b';
 
 const toCss = ([red, green, blue]) => `rgb(${red} ${green} ${blue})`;
 
@@ -33,7 +35,7 @@ export const createPanelPreview = () => {
     let current = null;
 
     const drawGrid = () => {
-        context.fillStyle = '#000';
+        context.fillStyle = UNLIT;
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.strokeStyle = 'rgba(255,255,255,0.045)';
         context.lineWidth = 1;
@@ -96,7 +98,7 @@ export const createPanelPreview = () => {
 
     const drawText = ({ layout, settings }) => {
         context.globalCompositeOperation = 'source-over';
-        context.fillStyle = '#000';
+        context.fillStyle = UNLIT;
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.fillStyle = toCss(settings.color);
         drawLayoutText({ layout, settings, textStart: 0 });
@@ -132,24 +134,36 @@ export const createPanelPreview = () => {
         context.restore();
     };
 
-    const paint = () => {
-        if (current === null) {
-            drawGrid();
-            return;
+    /**
+     * The walls of a diffuser grid, drawn over whatever is lit, so each LED
+     * reads as its own cell the way it does on a panel behind one.
+     */
+    const drawWalls = () => {
+        context.globalCompositeOperation = 'source-over';
+        context.fillStyle = '#000';
+        for (let column = 1; column < COLUMNS; column += 1) {
+            context.fillRect(column * SCALE - 1, 0, 2, canvas.height);
         }
-        if (current.kind === 'off') {
-            drawGrid();
-            return;
+        for (let row = 1; row < ROWS; row += 1) {
+            context.fillRect(0, row * SCALE - 1, canvas.width, 2);
         }
-        if (current.kind === 'bar') {
+    };
+
+    const draw = () => {
+        if (current === null || current.kind === 'off') {
+            drawGrid();
+        } else if (current.kind === 'bar') {
             drawBar(current);
-            return;
-        }
-        if (current.kind === 'iconText') {
+        } else if (current.kind === 'iconText') {
             drawIconText(current);
-            return;
+        } else {
+            drawText(current);
         }
-        drawText(current);
+    };
+
+    const paint = () => {
+        draw();
+        drawWalls();
     };
 
     const loop = () => {

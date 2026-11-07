@@ -140,9 +140,12 @@ export const sliderField = (name, value, onValue) => {
         onInput: event => {
             const next = Number(event.target.value);
             reading.textContent = String(next);
+            // How far the pads light; styles.css reads it.
+            event.target.style.setProperty('--v', `${(next / 255) * 100}%`);
             onValue(next);
         },
     });
+    slider.style.setProperty('--v', `${(Number(value) / 255) * 100}%`);
     return make('label', { class: 'field' }, [
         make('span', { class: 'field-label' }, [name, reading]),
         slider,
