@@ -26,6 +26,26 @@ colors:
   warn: "#ffc23a"
   readout-amber: "#ffcf8a"
   led-unlit: "#18181b"
+  lamp-off: "#403f46"
+  recess-edge: "#2a2a2e"
+  cap-knurl-light: "#3c3c42"
+  cap-knurl-dark: "#1e1e21"
+  cap-top: "#4a4a51"
+  cap-mid: "#29292d"
+  cap-low: "#1c1c1f"
+  fader-cap-low: "#33333a"
+  pointer: "#f2f2f5"
+  edge-hover: "#45454c"
+  scale-tick: "#6f6f78"
+  nut-1: "#8f8f97"
+  nut-2: "#5c5c63"
+  nut-3: "#3a3a40"
+  lever-highlight: "#d7d7dc"
+  lever-face: "#9a9aa2"
+  lever-shaft: "#b9b9c0"
+  nut-seat: "#151517"
+  switch-plate-top: "#19191c"
+  switch-plate-bottom: "#111113"
   json-green: "#9fe9c8"
   highlight: "#ffffff"
   highlight-faint: "rgba(255, 255, 255, 0.035)"
@@ -189,7 +209,7 @@ The world refuses the category default of a grey dark dashboard with a single bl
 A dark matte neutral body with five saturated pad lights, one of which is lit at a time as the accent.
 
 ### Primary
-- **Lit Pad Accent** (`--accent`, one of the pad colours below): not a fixed hue. `:root:has()` sets it from the selected tab, so caret, focus ring, selection, checked boxes, slider pads, the matched rule's ring and the LED strip all take the open tab's colour. Default is Entities cyan.
+- **Lit Pad Accent** (`--accent`, one of the pad colours below): not a fixed hue. `:root:has()` sets it from the selected tab, so caret, focus ring, selection, switch lamps, knob rings, the fader's LED column, the matched rule's ring and the LED strip all take the open tab's colour. Default is Entities cyan.
 
 ### Secondary
 - **Entities Cyan** (pad-entities), **Flow Magenta** (pad-flow), **Display Yellow** (pad-display), **Settings Green** (pad-settings): each tab pad's own light, and the accent while that tab is open.
@@ -211,7 +231,14 @@ A dark matte neutral body with five saturated pad lights, one of which is lit at
 - **Well** (well) with **Well Edge** (well-edge): input and readout recesses.
 - **Rubber** (rubber-top to rubber-bottom): keys, selects, checkboxes, position pads.
 - **Groove** (groove): pure black seams, table rules and dividers, always paired with a 1px light lip below.
-- **Text** (text), **Muted** (muted), **Faint** (faint, placeholders only). Headings, slider values and lit-key hover use pure white (highlight).
+- **Text** (text), **Muted** (muted), **Faint** (faint, placeholders only). Headings, knob and fader values and lit-key hover use pure white (highlight).
+- **Lamp Off** (lamp-off): the one off colour for every control lamp: knob ring LEDs, the fader's LED column, the switch lamp. Lighter than led-unlit on purpose: control lamps sit on dark plastic, while the panel's own off cells (led-unlit) sit between black diffuser walls.
+
+### Control Hardware Greys
+- **Knob cap:** a knurled skirt of cap-knurl-light and cap-knurl-dark in 5deg teeth, a soft-touch top as a radial of cap-top through cap-mid to cap-low, and a pointer line in pointer.
+- **Fader cap:** a ridged cap from cap-top through recess-edge and cap-low to fader-cap-low, with a pointer line across it; the printed scale uses scale-tick for majors and edge-hover for minors.
+- **Toggle switch:** a six-facet nut (nut-1, nut-2, nut-3, cap-top, scale-tick, muted, lit from the upper left) ringed by nut-seat, on a switch-plate-top to switch-plate-bottom plate; the lever is grey ABS, lighter than the nut so its position reads at a glance: the ball runs lever-highlight to lever-face to nut-2, and the shaft peaks at lever-shaft between scale-tick and nut-2 edges.
+- **Recess Edge** (recess-edge): the 1px ring around recesses, and the unlit pad base.
 
 ### Highlight and Indicator Stops
 - **Highlight scale** (white at fixed alphas): 0.025 row hover, 0.03 plate left edge, 0.035 lips under grooves and member hover (highlight-faint), 0.04-0.05 lips under dividers and the parting line, 0.06 chassis lip, 0.07 sheen and screw rim, 0.09-0.11 moulded top edges of plates and keys (highlight-edge), 0.25-0.35 dot-type heading halos and the lit-pad label emboss (highlight-halo), 0.5 the lit pad's inner rim. Do not invent steps in between.
@@ -224,7 +251,7 @@ A dark matte neutral body with five saturated pad lights, one of which is lit at
 ### Named Rules
 **The Lit Pad Rule.** The accent is whichever tab pad is lit. Never hard-code a pad colour into a component; use the accent so it follows the open tab. Save Red is the one pad that never becomes the accent.
 
-**The Glow Is State Rule.** A coloured halo (`--glow` or a pad's 22px/48px bloom) appears only on something that is on: the lit tab, enabled Save, a checked box, an active painter tool, an open help toggle, the matched rule and the strip above it, the connection and toast LEDs, a focused input or slider thumb. Resting surfaces never glow. The faint white or amber halo (highlight-halo, readout-glow) on dot-type headings and readouts is the display's own emission, not a state signal, and stays at or under 0.45 alpha.
+**The Glow Is State Rule.** A coloured halo (`--glow` or a pad's 22px/48px bloom) appears only on something that is on: the lit tab, enabled Save, a checked box, an active painter tool, an open help toggle, the matched rule and the strip above it, the connection and toast LEDs, a focused input, the knob ring's bloom while it is turned or focused, and the fader while focused. The fader's LED column and a knob's lit ring carry level, not glow. Resting surfaces never glow. The faint white or amber halo (highlight-halo, readout-glow) on dot-type headings and readouts is the display's own emission, not a state signal, and stays at or under 0.45 alpha.
 
 ## Typography
 
@@ -237,7 +264,7 @@ A dark matte neutral body with five saturated pad lights, one of which is lit at
 ### Hierarchy
 - **Display** (Doto 900, 24px, 1; 20px under 700px): the page title, white with a soft white halo.
 - **Headline** (Doto 900, 21px, 1.1): card titles.
-- **Readout** (Doto 800, 17-18px, 1): slider values in white; the showing value in readout amber.
+- **Readout** (Doto 800, 17-18px, 1): knob and fader values in white; the showing value in readout amber.
 - **Keyword** (Doto 900, 15px, 0.02em): IF / ELSE IF / ELSE / OTHERWISE in a small well, and position numbers on rubber pads.
 - **Readout large** (Doto 900, 20px, 1): dwell seconds in their field, readout amber.
 - **Title** (Archivo 700, 16px): a flow rule's name.
@@ -256,7 +283,7 @@ A dark matte neutral body with five saturated pad lights, one of which is lit at
 
 A sticky top stack (header plate, then the tab-pad plate) stays in view with a ground-coloured fade beneath it, so Save is always reachable. Header and tabs cap at 1280px. Below, `main` is a single column (gap 22px, padding 14px 24px 96px): narrow views cap at 1008px; split views cap at 1328px and become two columns (1.15fr / 1fr) at 900px, with the preview column sticky under the header. Every grid column is `minmax(0, …)` so long entity ids scroll inside their card instead of widening the page.
 
-Spacing rhythm runs 6 / 10 / 14 / 16 / 22 / 24px. Field grids auto-fit at a 150px minimum. Flow rules stack with no gap; the LED-strip connector (30px) is the space between them.
+Spacing rhythm runs 6 / 10 / 14 / 16 / 22 / 24px. Field grids auto-fit at a 150px minimum (128px on phones, so knobs sit two abreast like a channel strip). Flow rules stack with no gap; the LED-strip connector (30px) is the space between them.
 
 **Under 700px:** outer padding drops to 8-10px; module plates pad 24px 14px 20px so the heading clears the corner screws; the header wraps so the live mirror (shrunk to 160 x 40) and status take a full second line with Save at the right (76 x 44); what is showing wraps, with the entity id on its own line above the value; tab pads share the row (`flex: 1 0 74px`, 42px tall, 11px label); flow conditions put the entity on its own line and time conditions drop the redundant test; entity tables become stacked blocks with the id on its own line; row tools stay visible. On `hover: none` devices row tools are always shown.
 
@@ -284,7 +311,7 @@ Depth is physical and moulded, not floating. Modules sit in bays; inputs are pre
 
 ## Shapes
 
-Soft-cornered moulded plastic. Plates 14px; recesses 10px; pads 9px; wells 8px; keys and inputs 6px; checkboxes, swatches, chips and picker rows 5px; slider tracks and small badges 4px; LEDs and colour swatch insides 3px; the connector strip, link focus and warning LED 2px. LEDs and slider pads are squares, never circles. The help toggle is the one round key. Seams are 1px black rings; dividers and row rules are a black groove (2px divider, 1px top border on rows) with a 1px light lip beneath. No grey border lines.
+Soft-cornered moulded plastic. Plates 14px; recesses 10px; pads 9px; wells 8px; toggle switch plates 8px; keys and inputs 6px; swatches, chips and picker rows 5px; fader caps and small badges 4px; LEDs and colour swatch insides 3px; the connector strip, the knob pointer, the fader's LED column, link focus and warning LED 2px. LEDs are squares or ring segments, never dots. The round shapes are the help toggle and the knobs. Seams are 1px black rings; dividers and row rules are a black groove (2px divider, 1px top border on rows) with a 1px light lip beneath. No grey border lines.
 
 ## Components
 
@@ -305,9 +332,20 @@ Soft-cornered moulded plastic. Plates 14px; recesses 10px; pads 9px; wells 8px; 
 - **Style:** well background, well shadow, 6px radius, 7px 10px, 14px.
 - **Hover:** edge ring brightens to #45454c. **Focus:** 1px accent ring plus a 12px accent halo; no outline.
 - **Select:** a rubber key with a muted chevron, not a well; accent ring on hover.
-- **Checkbox:** a 20px rubber pad that lights with the accent bloom and glow when checked.
-- **Range:** a row of accent pads (14px lit, 4px black gap) on a 16px track; `--v` from `sliderField` dims everything past the value; a white 10 x 24 thumb that glows when active or focused.
+- **Checkbox (toggle switch):** a 34 x 46 bat-handle switch on a dark plate in a well: a grey ABS lever and ball through a six-facet nut, thrown up for on, with a cast shadow under the ball. A 6 x 6 square lamp at top right is lamp-off when off and a white-to-accent radial when on. The throw animates its background position over 120ms. Focus shows a 2px accent outline at 3px.
 - **Rule name:** reads as a 16px/700 title until hovered or focused, then becomes a well.
+
+### Knob (every 0-255 control)
+- **Shape:** a 72px round control: a 15-LED ring over 270deg (12deg LEDs, 6deg gaps, starting at -135deg) around a knurled cap set 12px in.
+- **Level:** `sliderField` sets `--n` (0-1) on the field. The ring lights in the accent up to the value in whole LEDs only (`round(up, …, 18deg)`), the rest lamp-off; the pointer line rotates to -135deg + n x 270deg.
+- **Input:** the real range input stays inside, invisible and focusable, so keyboard and screen reader work unchanged. Dragging up or right turns it up; Shift turns it finely (0.25 vs 1.25 per pixel). On touch only a sideways drag turns it (`touch-action: pan-y`) so the page still scrolls.
+- **States:** the lit LEDs bloom (a blurred 35% accent ring) only while pressed or focused; the cap gives to 0.97 under the hand; focus adds a 2px accent outline. A disabled knob (following the global setting) does not turn.
+- **Label:** centred above, with its value in white dot type.
+
+### Fader (the master level)
+- **Use:** brightness only (`{ fader: true }`), a long-throw vertical fader.
+- **Shape:** a 216px-tall well (12px 14px padding) with three columns: a printed tick scale (major every quarter, minor every sixteenth) on the left, a 6px black slot with a 48 x 30 ridged cap and a pointer line, and an 8px LED column on the right.
+- **Level:** the LED column lights in the accent from the bottom up to `--n` in 6px LEDs with 3px gaps; the rest lamp-off. Focus shows a 2px accent outline.
 
 ### Cards / Containers
 - **Module plate:** plate background, 14px, module-plate shadow, 20px 22px 22px (24px 14px 20px on phones), four corner screws and a parting line under the head.
@@ -334,7 +372,8 @@ Short and functional: 150ms colour and shadow transitions on keys and fields, 20
 - **Do** take colour state from `--accent` so it follows the lit tab (The Lit Pad Rule).
 - **Do** seat every new module as a plate with the full plate surface and module-plate shadow, screws and parting line, and every nested section as a recess without them.
 - **Do** put anything typed into a well, and anything pressed on rubber.
-- **Do** show on/off state with a square LED or a lit pad, with glow only while on (The Glow Is State Rule).
+- **Do** show on/off state with a square LED, a lit pad or a switch lamp, with glow only while on (The Glow Is State Rule).
+- **Do** use lamp-off for every control lamp that is off; keep led-unlit for the panel preview's cells.
 - **Do** set numbers the panel would show in Doto, and ids and JSON in Share Tech Mono.
 - **Do** keep every grid column `minmax(0, …)` and let long ids scroll or ellipsize inside their container.
 - **Do** drop all transitions and animations under reduced motion.
@@ -344,6 +383,7 @@ Short and functional: 150ms colour and shadow transitions on keys and fields, 20
 - **Don't** use Save Red as an accent or for anything but Save.
 - **Don't** stack a plate on a plate; nest as a recess.
 - **Don't** add white highlight alphas outside the highlight scale.
-- **Don't** draw LEDs, slider segments or indicators as circles; they are rounded squares.
+- **Don't** draw LEDs or indicators as round dots; they are rounded squares or ring segments.
+- **Don't** use a native-looking checkbox or a flat slider; on/off is a toggle switch and 0-255 is a knob (the fader is reserved for the master level).
 - **Don't** set sentences, buttons or labels in Doto.
 - **Don't** draw seams as grey border lines; use 1px black rings or the black groove with its light lip.

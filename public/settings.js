@@ -97,7 +97,7 @@ export const renderSettings = (root, context) => {
     const brightness = sliderField('Brightness', config.output.brightness, value => {
         config.output.brightness = value;
         context.edited();
-    });
+    }, { fader: true });
 
     const where = make('p', { class: 'hint', textContent: describeAddress(config.output.wledIp) });
 

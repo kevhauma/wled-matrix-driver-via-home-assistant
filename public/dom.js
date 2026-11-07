@@ -125,13 +125,69 @@ export const card = (title, children, help) => {
 export const field = (labelText, control) =>
     make('label', { class: 'field' }, [labelText, control]);
 
+/** How far a 0–255 control is turned, as 0–1; styles.css turns knobs and lights LEDs by it. */
+const setLevel = (node, value) => node.style.setProperty('--n', String(value / 255));
+
 /**
- * A slider whose label carries its current value. The number is updated in
- * place, because re-rendering on every `input` event replaces the slider under
- * the pointer and ends the drag.
+ * A knob over a real range input. The input keeps the keyboard, the focus and
+ * the screen reader; dragging the knob up or right turns it up, the way a knob
+ * on a controller is turned. Shift turns it finely.
  */
-export const sliderField = (name, value, onValue) => {
+const knob = slider => {
+    let drag = null;
+    const turn = event => {
+        if (drag === null) {
+            return;
+        }
+        // A finger moving up or down is scrolling the page, so on touch only sideways turns it.
+        const vertical = drag.touch ? 0 : drag.y - event.clientY;
+        const travel = vertical + (event.clientX - drag.x);
+        const perPixel = event.shiftKey ? 0.25 : 1.25;
+        const next = Math.max(0, Math.min(255, Math.round(drag.value + travel * perPixel)));
+        if (next !== Number(slider.value)) {
+            slider.value = String(next);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    };
+    const end = () => {
+        drag = null;
+    };
+    return make('span', {
+        class: 'knob',
+        onPointerdown: event => {
+            event.preventDefault();
+            // A disabled knob is one following the global setting; turning it must not override it.
+            if (slider.disabled) {
+                return;
+            }
+            slider.focus();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            drag = {
+                x: event.clientX,
+                y: event.clientY,
+                value: Number(slider.value),
+                touch: event.pointerType === 'touch',
+            };
+        },
+        onPointermove: turn,
+        onPointerup: end,
+        onPointercancel: end,
+    }, [
+        make('span', { class: 'knob-ring', 'aria-hidden': 'true' }),
+        make('span', { class: 'knob-cap', 'aria-hidden': 'true' }),
+        slider,
+    ]);
+};
+
+/**
+ * A 0–255 control whose label carries its current value: a knob, or with
+ * `fader` a long-throw vertical fader. The number is updated in place, because
+ * re-rendering on every `input` event replaces the control under the pointer
+ * and ends the drag.
+ */
+export const sliderField = (name, value, onValue, { fader = false } = {}) => {
     const reading = make('span', { class: 'field-value', textContent: String(value) });
+    let wrapper = null;
     const slider = make('input', {
         type: 'range',
         min: '0',
@@ -140,16 +196,23 @@ export const sliderField = (name, value, onValue) => {
         onInput: event => {
             const next = Number(event.target.value);
             reading.textContent = String(next);
-            // How far the pads light; styles.css reads it.
-            event.target.style.setProperty('--v', `${(next / 255) * 100}%`);
+            setLevel(wrapper, next);
             onValue(next);
         },
     });
-    slider.style.setProperty('--v', `${(Number(value) / 255) * 100}%`);
-    return make('label', { class: 'field' }, [
+    const control = fader
+        ? make('span', { class: 'fader' }, [
+            make('span', { class: 'fader-scale', 'aria-hidden': 'true' }),
+            slider,
+            make('span', { class: 'fader-leds', 'aria-hidden': 'true' }),
+        ])
+        : knob(slider);
+    wrapper = make('label', { class: fader ? 'field fader-field' : 'field knob-field' }, [
         make('span', { class: 'field-label' }, [name, reading]),
-        slider,
+        control,
     ]);
+    setLevel(wrapper, Number(value));
+    return wrapper;
 };
 
 export const option = (value, text, selected) =>
