@@ -37,15 +37,9 @@ colors:
   pointer: "#f2f2f5"
   edge-hover: "#45454c"
   scale-tick: "#6f6f78"
-  nut-1: "#8f8f97"
-  nut-2: "#5c5c63"
-  nut-3: "#3a3a40"
-  lever-highlight: "#d7d7dc"
-  lever-face: "#9a9aa2"
-  lever-shaft: "#b9b9c0"
-  nut-seat: "#151517"
-  switch-plate-top: "#19191c"
-  switch-plate-bottom: "#111113"
+  bezel-top: "#2a2a2e"
+  bezel-mid: "#141416"
+  bezel-bottom: "#0b0b0d"
   json-green: "#9fe9c8"
   highlight: "#ffffff"
   highlight-faint: "rgba(255, 255, 255, 0.035)"
@@ -209,7 +203,7 @@ The world refuses the category default of a grey dark dashboard with a single bl
 A dark matte neutral body with five saturated pad lights, one of which is lit at a time as the accent.
 
 ### Primary
-- **Lit Pad Accent** (`--accent`, one of the pad colours below): not a fixed hue. `:root:has()` sets it from the selected tab, so caret, focus ring, selection, switch lamps, knob rings, the fader's LED column, the matched rule's ring and the LED strip all take the open tab's colour. Default is Entities cyan.
+- **Lit Pad Accent** (`--accent`, one of the pad colours below): not a fixed hue. `:root:has()` sets it from the selected tab, so caret, focus ring, selection, rocker caps, knob rings, the fader's LED column, the matched rule's ring and the LED strip all take the open tab's colour. Default is Entities cyan.
 
 ### Secondary
 - **Entities Cyan** (pad-entities), **Flow Magenta** (pad-flow), **Display Yellow** (pad-display), **Settings Green** (pad-settings): each tab pad's own light, and the accent while that tab is open.
@@ -232,12 +226,12 @@ A dark matte neutral body with five saturated pad lights, one of which is lit at
 - **Rubber** (rubber-top to rubber-bottom): keys, selects, checkboxes, position pads.
 - **Groove** (groove): pure black seams, table rules and dividers, always paired with a 1px light lip below.
 - **Text** (text), **Muted** (muted), **Faint** (faint, placeholders only). Headings, knob and fader values and lit-key hover use pure white (highlight).
-- **Lamp Off** (lamp-off): the one off colour for every control lamp: knob ring LEDs, the fader's LED column, the switch lamp. Lighter than led-unlit on purpose: control lamps sit on dark plastic, while the panel's own off cells (led-unlit) sit between black diffuser walls.
+- **Lamp Off** (lamp-off): the one off colour for every control lamp: knob ring LEDs, the fader's LED column. The rocker switch is lit through its own cap instead. Lighter than led-unlit on purpose: control lamps sit on dark plastic, while the panel's own off cells (led-unlit) sit between black diffuser walls.
 
 ### Control Hardware Greys
 - **Knob cap:** a knurled skirt of cap-knurl-light and cap-knurl-dark in 5deg teeth, a soft-touch top as a radial of cap-top through cap-mid to cap-low, and a pointer line in pointer.
 - **Fader cap:** a ridged cap from cap-top through recess-edge and cap-low to fader-cap-low, with a pointer line across it; the printed scale uses scale-tick for majors and edge-hover for minors.
-- **Toggle switch:** a six-facet nut (nut-1, nut-2, nut-3, cap-top, scale-tick, muted, lit from the upper left) ringed by nut-seat, on a switch-plate-top to switch-plate-bottom plate; the lever is grey ABS, lighter than the nut so its position reads at a glance: the ball runs lever-highlight to lever-face to nut-2, and the shaft peaks at lever-shaft between scale-tick and nut-2 edges.
+- **Rocker switch:** a black bezel running bezel-top to bezel-mid to bezel-bottom around a black opening. The cap is the accent itself, not a grey: unlit it is the accent mixed 17% into near-black, lit it is the full accent with a white mix at the raised end and a white hotspot inside.
 - **Recess Edge** (recess-edge): the 1px ring around recesses, and the unlit pad base.
 
 ### Highlight and Indicator Stops
@@ -311,7 +305,7 @@ Depth is physical and moulded, not floating. Modules sit in bays; inputs are pre
 
 ## Shapes
 
-Soft-cornered moulded plastic. Plates 14px; recesses 10px; pads 9px; wells 8px; toggle switch plates 8px; keys and inputs 6px; swatches, chips and picker rows 5px; fader caps and small badges 4px; LEDs and colour swatch insides 3px; the connector strip, the knob pointer, the fader's LED column, link focus and warning LED 2px. LEDs are squares or ring segments, never dots. The round shapes are the help toggle and the knobs. Seams are 1px black rings; dividers and row rules are a black groove (2px divider, 1px top border on rows) with a 1px light lip beneath. No grey border lines.
+Soft-cornered moulded plastic. Plates 14px; recesses 10px; pads 9px; wells 8px; rocker bezels 8px; keys and inputs 6px; swatches, chips and picker rows 5px; fader caps and small badges 4px; LEDs and colour swatch insides 3px; the connector strip, the knob pointer, the fader's LED column, link focus and warning LED 2px. LEDs are squares or ring segments, never dots. The round shapes are the help toggle and the knobs. Seams are 1px black rings; dividers and row rules are a black groove (2px divider, 1px top border on rows) with a 1px light lip beneath. No grey border lines.
 
 ## Components
 
@@ -332,7 +326,7 @@ Soft-cornered moulded plastic. Plates 14px; recesses 10px; pads 9px; wells 8px; 
 - **Style:** well background, well shadow, 6px radius, 7px 10px, 14px.
 - **Hover:** edge ring brightens to #45454c. **Focus:** 1px accent ring plus a 12px accent halo; no outline.
 - **Select:** a rubber key with a muted chevron, not a well; accent ring on hover.
-- **Checkbox (toggle switch):** a 34 x 46 bat-handle switch on a dark plate in a well: a grey ABS lever and ball through a six-facet nut, thrown up for on, with a cast shadow under the ball. A 6 x 6 square lamp at top right is lamp-off when off and a white-to-accent radial when on. The throw animates its background position over 120ms. Focus shows a 2px accent outline at 3px.
+- **Checkbox (rocker switch):** a 34 x 46 lit rocker in a black bezel, I on the top half and O on the bottom, a fine diamond knurl over a translucent cap. Off, the O end is pressed: the raised I half is drawn taller (20 of 36px) and lit at its top edge, the cap is dark accent, the marks 50% white. On, the I end is pressed (16 of 36px): the cap lights in the accent with a white hotspot, the lamp spills onto the bezel and blooms 16px around it, the marks go full white. The rocker snaps, as a real one does; only the bloom fades over 120ms. Pressing dims it to 0.9. Focus shows a 2px accent outline at 3px.
 - **Rule name:** reads as a 16px/700 title until hovered or focused, then becomes a well.
 
 ### Knob (every 0-255 control)
@@ -372,7 +366,7 @@ Short and functional: 150ms colour and shadow transitions on keys and fields, 20
 - **Do** take colour state from `--accent` so it follows the lit tab (The Lit Pad Rule).
 - **Do** seat every new module as a plate with the full plate surface and module-plate shadow, screws and parting line, and every nested section as a recess without them.
 - **Do** put anything typed into a well, and anything pressed on rubber.
-- **Do** show on/off state with a square LED, a lit pad or a switch lamp, with glow only while on (The Glow Is State Rule).
+- **Do** show on/off state with a square LED, a lit pad or a lit rocker, with glow only while on (The Glow Is State Rule).
 - **Do** use lamp-off for every control lamp that is off; keep led-unlit for the panel preview's cells.
 - **Do** set numbers the panel would show in Doto, and ids and JSON in Share Tech Mono.
 - **Do** keep every grid column `minmax(0, …)` and let long ids scroll or ellipsize inside their container.
@@ -384,6 +378,6 @@ Short and functional: 150ms colour and shadow transitions on keys and fields, 20
 - **Don't** stack a plate on a plate; nest as a recess.
 - **Don't** add white highlight alphas outside the highlight scale.
 - **Don't** draw LEDs or indicators as round dots; they are rounded squares or ring segments.
-- **Don't** use a native-looking checkbox or a flat slider; on/off is a toggle switch and 0-255 is a knob (the fader is reserved for the master level).
+- **Don't** use a native-looking checkbox or a flat slider; on/off is a lit rocker switch and 0-255 is a knob (the fader is reserved for the master level).
 - **Don't** set sentences, buttons or labels in Doto.
 - **Don't** draw seams as grey border lines; use 1px black rings or the black groove with its light lip.
